@@ -436,7 +436,7 @@ function InlineSection() {
       <button
         className="tib-section-head"
         onClick={() => storeUpdate({ sectionOpen: !sectionOpen })}
-        title="待办（跨会话全局收件箱）"
+        title="待办"
       >
         <span className="tib-head-icon"><IconChecklistOutline14 size={16} /></span>
         <span className="tib-head-label">待办</span>
@@ -447,7 +447,7 @@ function InlineSection() {
           {!loaded ? (
             <div className="tib-empty-inline">加载中…</div>
           ) : state.items.length === 0 ? (
-            <div className="tib-empty-inline">暂无待办 🎉</div>
+            <div className="tib-empty-inline">暂无</div>
           ) : (
             state.items.map((item) => {
               const meta = itemMeta(item)
@@ -505,7 +505,7 @@ function RailButton() {
     <button
       className="tib-bell"
       onClick={() => storeUpdate({ panelOpen: !panelOpen })}
-      title="全局待办收件箱（跨会话）"
+      title="待办"
     >
       <IconChecklistOutline14 size={18} />
       {state.pending > 0 ? <span className="tib-badge">{String(state.pending)}</span> : null}
@@ -582,7 +582,7 @@ function InboxPanel() {
         {!loaded ? (
           <div className="tib-empty">加载中…</div>
         ) : state.items.length === 0 ? (
-          <div className="tib-empty">暂无待办 🎉</div>
+          <div className="tib-empty">暂无</div>
         ) : (
           state.items.map((item) => {
             const meta = itemMeta(item)
