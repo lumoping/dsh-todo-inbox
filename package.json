@@ -36,8 +36,7 @@
     "lib/client.js",
     "lib/types/**/*.d.ts",
     "cordis.patch.yml",
-    "README.md",
-    "dynamic/"
+    "README.md"
   ],
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('lib',{recursive:true,force:true})\"",
