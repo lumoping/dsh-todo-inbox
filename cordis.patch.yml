@@ -1,0 +1,20 @@
+# dsh-todo-inbox bundle patch
+#
+# This file is the `dsh.bundle.patch` layer of the package: when the plugin is
+# installed through the official CLI —
+#
+#   dsh plugin --profile <name> add <path-or-name>
+#
+# — the command reconciles `dsh.profile.bundles` against installed packages
+# and, seeing this declaration, appends the package to the bundle stack. The
+# profile boot then merges THIS patch (a single `insert` of the plugin row)
+# into the composition: the host half mounts process-wide and registers the
+# inbox_* tools for every session; the browser half is served as
+# /plugins/todo-inbox/client.js and registers the sidebar footer action.
+#
+# Do NOT add a second manual mount line in the profile's own cordis.patch.yml
+# — one mount only (two mounts register /todo-inbox/api twice and fail the
+# whole plugin tree at boot with "duplicate prefix route").
+- insert:
+    - id: todo-inbox
+      name: 'dsh-todo-inbox'

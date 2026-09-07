@@ -1,6 +1,8 @@
 # 激活提示词：定义并运行 todo-inbox 插件/Activate Prompt: Define & Run the todo-inbox Plugin
 
-> **Contributors**: lumoping ｜ **最后更新**：2026-09-07 ｜ [GitHub](https://github.com/lumoping/dsh-todo-inbox/blob/main/activate-prompt.md)
+> **Contributors**: lumoping ｜ **最后更新**：2026-09-07 ｜ [GitHub](https://github.com/lumoping/dsh-todo-inbox/blob/main/dynamic/activate-prompt.md)
+
+> **说明**：动态插件路线（运行期临时，重启丢失）已被仓库根目录的**静态插件包**取代（`package.json` + `src/` + `cordis.patch.yml`）。本文件仅在静态版安装前、想临时体验时使用。
 
 把下方整段内容粘贴到一个**新建的、选择了 `cordis` preset 的会话**里（会话不能已有任何产出，否则无法切换 preset）。激活会话的 agent 会按 cordis 技能的标准流程：inspect → define → run，过程中需要你在面板里批准一次运行。
 
@@ -8,10 +10,10 @@
 
 ## 任务（把下面整段发给 cordis 会话）
 
-请用动态 Cordis 插件的方式，在当前 DSH 进程里定义并运行一个名为 **todo-inbox** 的插件：全局待办收件箱（跨会话）。插件源码已经写好并做了语法与行为验证，位于本仓库根目录：
+请用动态 Cordis 插件的方式，在当前 DSH 进程里定义并运行一个名为 **todo-inbox** 的插件：全局待办收件箱（跨会话）。插件源码已经写好并做了语法与行为验证，位于本仓库的 `dynamic/` 目录：
 
-- Host 半：`plugin-host.js`
-- Browser 半：`plugin-client.js`
+- Host 半：`dynamic/plugin-host.js`
+- Browser 半：`dynamic/plugin-client.js`
 
 请按以下步骤执行，**不要改变两个代码半体的业务逻辑，只允许替换数据路径**：
 
