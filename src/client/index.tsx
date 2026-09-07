@@ -28,7 +28,6 @@ import {
   IconChecklistOutline14,
   IconCheckOutline16,
   IconCloseOutline16,
-  IconRightUpOutline16,
   IconRefreshOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 
@@ -104,6 +103,8 @@ const CSS = `
     flex: 1; min-width: 0; font-weight: 500; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap;
   }
+  a.tib-row-title { color: inherit; text-decoration: none; }
+  a.tib-row-title:hover { color: var(--dsw-alias-link, light-dark(#1a73e8, #8ab4f8)); }
   .tib-row-actions {
     display: flex; gap: 2px; flex: none;
     opacity: 0; transition: opacity 120ms ease;
@@ -202,7 +203,9 @@ const CSS = `
     border-bottom: 0.5px solid var(--dsw-alias-border-l1, light-dark(#f0f0f0, #313131));
   }
   .tib-item:last-child { border-bottom: 0; }
-  .tib-item-title { font-weight: 600; word-break: break-word; line-height: 1.4; }
+  .tib-item-title { font-weight: 600; word-break: break-word; line-height: 1.4; display: block; }
+  a.tib-item-link { color: inherit; text-decoration: none; }
+  a.tib-item-link:hover { color: var(--dsw-alias-link, light-dark(#1a73e8, #8ab4f8)); }
   .tib-item-detail {
     margin-top: 3px; white-space: pre-wrap; word-break: break-word; line-height: 1.5;
     color: var(--dsw-alias-label-secondary, light-dark(#444, #ccc));
@@ -454,19 +457,14 @@ function InlineSection() {
               return (
                 <div className="tib-row" key={item.id}>
                   <div className="tib-row-top">
-                    <span className="tib-row-title" title={item.title}>{item.title}</span>
+                    {item.link ? (
+                      <a className="tib-row-title" href={item.link} target="_blank" rel="noreferrer" title={item.title}>
+                        {item.title}
+                      </a>
+                    ) : (
+                      <span className="tib-row-title" title={item.title}>{item.title}</span>
+                    )}
                     <span className="tib-row-actions">
-                      {item.link ? (
-                        <a
-                          className="tib-icon-btn"
-                          href={item.link}
-                          target="_blank"
-                          rel="noreferrer"
-                          title="打开链接"
-                        >
-                          <IconRightUpOutline16 size={14} />
-                        </a>
-                      ) : null}
                       <button
                         className="tib-icon-btn"
                         onClick={() => void act('done', item.id)}
@@ -588,15 +586,18 @@ function InboxPanel() {
             const meta = itemMeta(item)
             return (
               <div className="tib-item" key={item.id}>
-                <div className="tib-item-title">{item.title}</div>
+                {item.link ? (
+                  <a className="tib-item-title tib-item-link" href={item.link} target="_blank" rel="noreferrer">
+                    {item.title}
+                  </a>
+                ) : (
+                  <div className="tib-item-title">{item.title}</div>
+                )}
                 {item.detail ? (
                   <div className="tib-item-detail">{renderDetail(item.detail, item.id)}</div>
                 ) : null}
                 {meta ? <div className="tib-item-meta">{meta}</div> : null}
                 <div className="tib-item-footer">
-                  {item.link
-                    ? <a className="tib-link" href={item.link} target="_blank" rel="noreferrer">打开 ↗</a>
-                    : null}
                   <button className="tib-rm" onClick={() => void act('remove', item.id)}>删除</button>
                   <button className="tib-done" onClick={() => void act('done', item.id)}>完成</button>
                 </div>

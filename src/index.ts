@@ -30,13 +30,14 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-// Type-only: pulls the ctx.webServer / ctx.tools service declarations onto
-// Context; value imports stay out of the bundle.
+// Type-only: pulls the ctx.webServer / ctx.tools / ctx.systemPrompt service
+// declarations onto Context; value imports stay out of the bundle.
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-system-prompt'
 
 export const name = 'todo-inbox'
-export const inject = ['tools', 'webServer']
+export const inject = ['tools', 'webServer', 'systemPrompt']
 
 /** One inbox item (mirrors the data-file record; all scalar fields). */
 export interface InboxItem {
@@ -58,6 +59,24 @@ export interface TodoInboxConfig {
 
 /** API prefix for the browser half (registered as a webserver prefix route). */
 const API_PREFIX = '/todo-inbox/api'
+
+/**
+ * System-prompt section registered for every session: the trigger discipline
+ * that turns "mentioned in prose" into "recorded in the inbox". Registered
+ * in the tool-guidance band (after the read/write tool sections, before the
+ * SDK section) so it lands next to the tool catalog it governs.
+ */
+const INBOX_PROMPT_SECTION = {
+  name: 'todo-inbox:discipline',
+  order: 1600,
+  text:
+    '## Global todo inbox\n'
+    + 'When your work produces an action that waits on the human — merge an MR, approve a work order, '
+    + 'review something, release, roll back after a future event, or any follow-up you name in your reply '
+    + '("after X completes, do Y") — you MUST call `inbox_add` in the same turn. Never leave such an action '
+    + 'only in prose: if you wrote it in the reply, it belongs in the inbox. Use `inbox_list` to check what '
+    + 'is still pending, and `inbox_done` once the human confirms it is handled.',
+}
 
 export function apply(ctx: Context, config?: TodoInboxConfig): void {
   const dataPath = typeof config?.dataPath === 'string' && config.dataPath.length > 0
@@ -142,14 +161,21 @@ export function apply(ctx: Context, config?: TodoInboxConfig): void {
     text: JSON.stringify(value, null, 2),
   }]
 
+  // The discipline section: tools alone do not fire reliably — a model that
+  // mentions "roll back after X" in prose may never think to call inbox_add.
+  // One short prompt section makes the trigger explicit for every session.
+  ctx.effect(() => ctx.systemPrompt.section(INBOX_PROMPT_SECTION))
+
   // ── model-facing tools ────────────────────────────────────────────────────
 
   ctx.tools.register(defineTool({
     name: 'inbox_add',
     description:
       'Record one item waiting on the human in the GLOBAL todo inbox (merge MR, '
-      + 'approve work order, review, release...). Any session can add; the user '
-      + 'sees every pending item in the sidebar inbox panel.',
+      + 'approve work order, review, release, rollback after a future event...). '
+      + 'TRIGGER RULE: whenever your reply names a future human action, call this '
+      + 'tool in the same turn — never mention it only in prose. Any session can '
+      + 'add; the user sees every pending item in the sidebar inbox section.',
     parameters: {
       type: {
         type: 'string',

@@ -42,10 +42,12 @@ const dataPath = join(dir, 'todo-inbox.json')
 
 const registeredTools = []
 const registeredRoutes = []
+const registeredSections = []
 
 const ctx = {
   tools: { register: (tool) => { registeredTools.push(tool) } },
   webServer: { register: (route) => { registeredRoutes.push(route); return () => {} } },
+  systemPrompt: { section: (section) => { registeredSections.push(section); return () => {} } },
   effect: (fn) => { fn() },
 }
 
@@ -61,9 +63,9 @@ check('plugin entry exports (name/inject/apply)', () => {
 const host = await import('../lib/index.js')
 const name = host.name
 const inject = host.inject
-check('name = todo-inbox, injects tools/webServer', () => {
+check('name = todo-inbox, injects tools/webServer/systemPrompt', () => {
   assert.equal(name, 'todo-inbox')
-  assert.deepEqual(inject, ['tools', 'webServer'])
+  assert.deepEqual(inject, ['tools', 'webServer', 'systemPrompt'])
 })
 
 apply(ctx, { dataPath })
@@ -80,6 +82,12 @@ check('one /todo-inbox/api prefix route registered', () => {
   assert.equal(registeredRoutes.length, 1)
   assert.equal(registeredRoutes[0].kind, 'prefix')
   assert.equal(registeredRoutes[0].path, '/todo-inbox/api')
+})
+
+check('prompt discipline section registered', () => {
+  assert.equal(registeredSections.length, 1)
+  assert.equal(registeredSections[0].name, 'todo-inbox:discipline')
+  assert.ok(registeredSections[0].text.includes('inbox_add'))
 })
 
 const exec = async (toolName, args) => {
