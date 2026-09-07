@@ -43,14 +43,7 @@ const dataPath = join(dir, 'todo-inbox.json')
 const registeredTools = []
 const registeredRoutes = []
 
-const fsStub = {
-  resolve: async (path) => ({ targetKey: path, displayPath: path, path }),
-  readText: async (target) => readFileSync(target.path, 'utf8'),
-  writeText: async (target, content) => writeFileSync(target.path, content),
-}
-
 const ctx = {
-  fs: fsStub,
   tools: { register: (tool) => { registeredTools.push(tool) } },
   webServer: { register: (route) => { registeredRoutes.push(route); return () => {} } },
   effect: (fn) => { fn() },
@@ -68,9 +61,9 @@ check('plugin entry exports (name/inject/apply)', () => {
 const host = await import('../lib/index.js')
 const name = host.name
 const inject = host.inject
-check('name = todo-inbox, injects tools/fs/webServer', () => {
+check('name = todo-inbox, injects tools/webServer', () => {
   assert.equal(name, 'todo-inbox')
-  assert.deepEqual(inject, ['tools', 'fs', 'webServer'])
+  assert.deepEqual(inject, ['tools', 'webServer'])
 })
 
 apply(ctx, { dataPath })
@@ -206,10 +199,24 @@ const clientSource = readFileSync(clientPath, 'utf8')
 const clientModule = { exports: {} }
 const clientRequire = (specifier) => {
   assert.ok(
-    ['react', 'react/jsx-runtime', 'react-dom', 'react-dom/client', 'cordis', '@deepseek-ai/dsh-client-ui-slots']
-      .includes(specifier),
+    [
+      'react', 'react/jsx-runtime', 'react-dom', 'react-dom/client',
+      'cordis', '@deepseek-ai/dsh-client-ui-slots',
+      '@deepseek-ai/dsh-client-ui-primitives',
+    ].includes(specifier),
     `unexpected runtime require: ${specifier}`,
   )
+  // ui-primitives is a pure-ESM package that createRequire cannot load; the
+  // bundle only uses the icon component at render time (never during the
+  // smoke test), so a minimal stub satisfies the factory.
+  if (specifier === '@deepseek-ai/dsh-client-ui-primitives') {
+    return { IconChecklistOutline14: () => null }
+  }
+  // createRoot needs a real DOM container; the smoke test has no DOM, so
+  // return a no-op root.
+  if (specifier === 'react-dom/client') {
+    return { createRoot: () => ({ render: () => {}, unmount: () => {} }) }
+  }
   return nodeRequire(specifier)
 }
 
@@ -244,8 +251,10 @@ const clientCtx = {
 let styleTags = 0
 globalThis.document = {
   querySelector: () => null,
-  createElement: () => ({ dataset: {}, textContent: '' }),
+  getElementById: () => null,
+  createElement: () => ({ dataset: {}, textContent: '', remove: () => {} }),
   head: { appendChild: () => { styleTags += 1 } },
+  body: { appendChild: () => {} },
 }
 clientApi.apply(clientCtx)
 check('apply() injects sidebar.footer.action', () => {
@@ -253,6 +262,24 @@ check('apply() injects sidebar.footer.action', () => {
 })
 check('apply() injects the plugin style tag', () => {
   assert.equal(styleTags, 1)
+})
+
+console.log('\n[client] renderDetail (safe markdown subset)')
+check('bold / italic / code / link / bare URL', () => {
+  const nodes = clientApi.renderDetail('**b** *i* `c` [x](https://a.b) https://c.d', 'k')
+  // Separator spaces render as plain text nodes; compare element types only.
+  const types = nodes.filter((n) => typeof n !== 'string').map((n) => n.type)
+  assert.deepEqual(types, ['strong', 'em', 'code', 'a', 'a'])
+})
+check('unsafe protocol renders as literal text, never a link', () => {
+  const nodes = clientApi.renderDetail('see [x](javascript:alert(1)) ok', 'k')
+  const joined = nodes.map((n) => (typeof n === 'string' ? n : `[${n.type}]`)).join('')
+  assert.ok(joined.includes('[x](javascript:alert(1))'))
+  assert.ok(!joined.includes('[a]'), 'javascript: must not become an <a>')
+})
+check('unmatched markdown stays literal', () => {
+  const nodes = clientApi.renderDetail('**unclosed', 'k')
+  assert.equal(nodes.join(''), '**unclosed')
 })
 
 // ── teardown ────────────────────────────────────────────────────────────────

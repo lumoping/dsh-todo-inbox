@@ -12,6 +12,11 @@
  * /todo-inbox/api (registered on the shared webserver) — no remote-bridge
  * machinery needed, exactly like other third-party bundles.
  *
+ * Persistence uses node:fs directly, NOT the injected `fs` service: the app's
+ * fs service applies the workspace sandbox policy (writes to ~/.dsh/... are
+ * denied), while a static host plugin runs in the real host process with full
+ * Node privileges — same as other static bundles (e.g. dsh-better-sidebar).
+ *
  * No Config schema: the row config passes through raw and unknown fields are
  * ignored, so a boot-time schema/version mismatch can never fail the plugin
  * tree.
@@ -22,16 +27,16 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-// Type-only: pulls the ctx.fs / ctx.webServer / ctx.tools service declarations
-// onto Context; value imports stay out of the bundle.
-import type {} from '@deepseek-ai/dsh-fs'
+// Type-only: pulls the ctx.webServer / ctx.tools service declarations onto
+// Context; value imports stay out of the bundle.
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-tools'
 
 export const name = 'todo-inbox'
-export const inject = ['tools', 'fs', 'webServer']
+export const inject = ['tools', 'webServer']
 
 /** One inbox item (mirrors the data-file record; all scalar fields). */
 export interface InboxItem {
@@ -55,7 +60,6 @@ export interface TodoInboxConfig {
 const API_PREFIX = '/todo-inbox/api'
 
 export function apply(ctx: Context, config?: TodoInboxConfig): void {
-  const fs = ctx.fs
   const dataPath = typeof config?.dataPath === 'string' && config.dataPath.length > 0
     ? config.dataPath
     : join(homedir(), '.dsh', 'todo-inbox.json')
@@ -65,7 +69,6 @@ export function apply(ctx: Context, config?: TodoInboxConfig): void {
   let items: InboxItem[] = []
   let lastSeen = ''
   let chain: Promise<void> = Promise.resolve()
-  const targetPromise = fs.resolve(dataPath)
 
   const validItem = (x: unknown): x is InboxItem =>
     typeof x === 'object' && x !== null
@@ -74,10 +77,9 @@ export function apply(ctx: Context, config?: TodoInboxConfig): void {
     && (x as InboxItem).title.length > 0
 
   async function loadFromDisk(): Promise<void> {
-    const target = await targetPromise
     let text: string
     try {
-      text = await fs.readText(target)
+      text = await readFile(dataPath, 'utf8')
     } catch {
       // File absent or unreadable: empty inbox.
       lastSeen = ''
@@ -99,9 +101,8 @@ export function apply(ctx: Context, config?: TodoInboxConfig): void {
   }
 
   async function persist(): Promise<void> {
-    const target = await targetPromise
     const text = JSON.stringify({ version: 1, updatedAt: new Date().toISOString(), items }, null, 2)
-    await fs.writeText(target, text)
+    await writeFile(dataPath, text, 'utf8')
     lastSeen = text
   }
 
@@ -355,10 +356,9 @@ export function apply(ctx: Context, config?: TodoInboxConfig): void {
   ctx.effect(() => {
     const timer = setInterval(() => {
       void enqueue(async () => {
-        const target = await targetPromise
         let text: string
         try {
-          text = await fs.readText(target)
+          text = await readFile(dataPath, 'utf8')
         } catch {
           return
         }
