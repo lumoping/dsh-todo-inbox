@@ -1,6 +1,6 @@
 # 激活提示词：定义并运行 todo-inbox 插件/Activate Prompt: Define & Run the todo-inbox Plugin
 
-> **Contributors**: majun ｜ **最后更新**：2026-09-07 ｜ [GitHub](https://github.com/lumoping/dsh-todo-inbox/blob/main/activate-prompt.md)
+> **Contributors**: lumoping ｜ **最后更新**：2026-09-07 ｜ [GitHub](https://github.com/lumoping/dsh-todo-inbox/blob/main/activate-prompt.md)
 
 把下方整段内容粘贴到一个**新建的、选择了 `cordis` preset 的会话**里（会话不能已有任何产出，否则无法切换 preset）。激活会话的 agent 会按 cordis 技能的标准流程：inspect → define → run，过程中需要你在面板里批准一次运行。
 

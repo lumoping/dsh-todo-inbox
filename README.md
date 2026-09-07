@@ -1,6 +1,6 @@
 # DSH 全局待办收件箱插件 todo-inbox/Global Todo Inbox Plugin
 
-> **Contributors**: majun ｜ **最后更新**：2026-09-07 ｜ [GitHub](https://github.com/lumoping/dsh-todo-inbox/blob/main/README.md)
+> **Contributors**: lumoping ｜ **最后更新**：2026-09-07 ｜ [GitHub](https://github.com/lumoping/dsh-todo-inbox/blob/main/README.md)
 
 一个运行在 DeepSeek Harness Web GUI 上的**动态 Cordis 插件**：任何会话的 agent 都能登记"等待人类处理"的待办（合并 MR、审批工单、评审、发布等），用户在侧边栏底部的一个全局面板里查看、完成、删除——不再因为并行多个会话而漏掉某条待办。
 
