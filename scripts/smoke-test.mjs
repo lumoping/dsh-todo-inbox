@@ -218,7 +218,12 @@ const clientRequire = (specifier) => {
   // bundle only uses the icon components at render time (never during the
   // smoke test), so a minimal stub satisfies the factory.
   if (specifier === '@deepseek-ai/dsh-client-ui-primitives') {
-    return { IconChecklistOutline14: () => null, IconCheckOutline16: () => null, IconCloseOutline16: () => null }
+    return {
+      IconChecklistOutline14: () => null,
+      IconCheckOutline16: () => null,
+      IconCloseOutline16: () => null,
+      IconRightUpOutline16: () => null,
+    }
   }
   return nodeRequire(specifier)
 }

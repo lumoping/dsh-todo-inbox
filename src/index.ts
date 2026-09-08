@@ -61,6 +61,14 @@ export interface TodoInboxConfig {
 const API_PREFIX = '/todo-inbox/api'
 
 /**
+ * Normalize a session source to the bare session id `sessions.open()` expects:
+ * the Agent may carry a `session-` prefix that must be stripped.
+ */
+function normalizeSource(source: string): string {
+  return source.startsWith('session-') ? source.slice('session-'.length) : source
+}
+
+/**
  * System-prompt section registered for every session: the trigger discipline
  * that turns "mentioned in prose" into "recorded in the inbox". Registered
  * in the tool-guidance band (after the read/write tool sections, before the
@@ -109,7 +117,10 @@ export function apply(ctx: Context, config?: TodoInboxConfig): void {
     try {
       const parsed: unknown = JSON.parse(text)
       if (typeof parsed === 'object' && parsed !== null && Array.isArray((parsed as { items?: unknown }).items)) {
-        items = ((parsed as { items: unknown[] }).items).filter(validItem)
+        items = ((parsed as { items: unknown[] }).items).filter(validItem).map((item) => ({
+          ...item,
+          source: normalizeSource(item.source),
+        }))
       } else {
         items = []
       }
@@ -150,7 +161,10 @@ export function apply(ctx: Context, config?: TodoInboxConfig): void {
   function sourceOf(exec: unknown): string {
     try {
       const agent = (exec as { agent?: { sessionId?: string; id?: string } } | undefined)?.agent
-      return String(agent?.sessionId ?? agent?.id ?? '')
+      const raw = String(agent?.sessionId ?? agent?.id ?? '')
+      // `sessions.open(id)` expects the bare session id; the Agent may carry
+      // a `session-` prefix that must be stripped before the jump works.
+      return normalizeSource(raw)
     } catch {
       return ''
     }
@@ -271,7 +285,7 @@ export function apply(ctx: Context, config?: TodoInboxConfig): void {
           link: item.link,
           dueAt: item.dueAt,
           createdAt: item.createdAt,
-          source: item.source,
+          source: normalizeSource(item.source),
           doneAt: item.doneAt,
         })),
       })
