@@ -26,7 +26,6 @@ import {
   IconChecklistOutline14,
   IconCheckOutline16,
   IconCloseOutline16,
-  IconRightUpOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 
 export const name = 'todo-inbox-client'
@@ -111,8 +110,8 @@ const CSS = `
     flex: 1; min-width: 0; font-weight: 500; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap;
   }
-  .tib-row-title-session { cursor: pointer; }
-  .tib-row-title-session:hover { color: var(--dsw-alias-link, light-dark(#1a73e8, #8ab4f8)); }
+  a.tib-row-title { color: inherit; text-decoration: none; }
+  a.tib-row-title:hover { color: var(--dsw-alias-link, light-dark(#1a73e8, #8ab4f8)); }
   .tib-row-actions {
     display: flex; gap: 2px; flex: none;
     opacity: 0; transition: opacity 120ms ease;
@@ -138,6 +137,8 @@ const CSS = `
     white-space: pre-wrap; word-break: break-word;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
+  .tib-row-detail-session { cursor: pointer; }
+  .tib-row-detail-session:hover { color: var(--dsw-alias-label-primary, light-dark(#333, #ccc)); }
   .tib-row-meta {
     margin-top: 2px; font-size: .8em; letter-spacing: .01em;
     color: var(--dsw-alias-label-tertiary, light-dark(#999, #888));
@@ -391,26 +392,14 @@ function InlineSection() {
               return (
                 <div className="tib-row" key={item.id}>
                   <div className="tib-row-top">
-                    <span
-                      className="tib-row-title tib-row-title-session"
-                      title={`${item.title}\n点击跳转到来源会话`}
-                      onClick={() => openSourceSession(item.source)}
-                    >
-                      {item.title}
-                    </span>
+                    {item.link ? (
+                      <a className="tib-row-title" href={item.link} target="_blank" rel="noreferrer" title={item.title}>
+                        {item.title}
+                      </a>
+                    ) : (
+                      <span className="tib-row-title" title={item.title}>{item.title}</span>
+                    )}
                     <span className="tib-row-actions">
-                      {item.link ? (
-                        <a
-                          className="tib-icon-btn"
-                          href={item.link}
-                          target="_blank"
-                          rel="noreferrer"
-                          title="打开链接"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <IconRightUpOutline16 size={14} />
-                        </a>
-                      ) : null}
                       <button
                         className="tib-icon-btn"
                         onClick={() => void act('done', item.id)}
@@ -428,7 +417,13 @@ function InlineSection() {
                     </span>
                   </div>
                   {item.detail ? (
-                    <div className="tib-row-detail">{renderDetail(item.detail, item.id)}</div>
+                    <div
+                      className="tib-row-detail tib-row-detail-session"
+                      title="点击跳转到来源会话"
+                      onClick={() => openSourceSession(item.source)}
+                    >
+                      {renderDetail(item.detail, item.id)}
+                    </div>
                   ) : null}
                   {meta ? <div className="tib-row-meta">{meta}</div> : null}
                 </div>
