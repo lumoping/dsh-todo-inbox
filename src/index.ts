@@ -61,11 +61,13 @@ export interface TodoInboxConfig {
 const API_PREFIX = '/todo-inbox/api'
 
 /**
- * Normalize a session source to the bare session id `sessions.open()` expects:
- * the Agent may carry a `session-` prefix that must be stripped.
+ * Normalize a session source to the canonical session id `sessions.open()`
+ * expects: the client session list uses the persisted `header.id`, which
+ * carries the `session-` prefix. Sources recorded before this fix (bare ids)
+ * are upgraded to the prefixed form on read.
  */
 function normalizeSource(source: string): string {
-  return source.startsWith('session-') ? source.slice('session-'.length) : source
+  return source === '' || source.startsWith('session-') ? source : `session-${source}`
 }
 
 /**
@@ -162,8 +164,8 @@ export function apply(ctx: Context, config?: TodoInboxConfig): void {
     try {
       const agent = (exec as { agent?: { sessionId?: string; id?: string } } | undefined)?.agent
       const raw = String(agent?.sessionId ?? agent?.id ?? '')
-      // `sessions.open(id)` expects the bare session id; the Agent may carry
-      // a `session-` prefix that must be stripped before the jump works.
+      // Canonicalize to the prefixed session id `sessions.open()` expects
+      // (the client list uses the persisted `header.id`).
       return normalizeSource(raw)
     } catch {
       return ''

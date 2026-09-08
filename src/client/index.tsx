@@ -360,7 +360,7 @@ async function act(method: 'done' | 'remove', id: string): Promise<void> {
 function itemMeta(item: InboxItem): string {
   return [
     item.type,
-    item.source ? `来自 ${item.source}` : null,
+    item.source ? `来自 ${item.source.startsWith('session-') ? item.source.slice('session-'.length) : item.source}` : null,
     item.dueAt ? `截止 ${item.dueAt.replace('T', ' ').slice(0, 16)}` : null,
   ].filter(Boolean).join(' · ')
 }
