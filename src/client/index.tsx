@@ -118,12 +118,13 @@ const CSS = `
   }
   .tib-row:hover .tib-row-actions, .tib-row:focus-within .tib-row-actions { opacity: 1; }
   .tib-icon-btn {
-    display: grid; place-items: center; width: 22px; height: 22px; padding: 0;
-    border: none; border-radius: 6px; background: transparent; cursor: pointer;
+    display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
+    border: none; border-radius: 50%; corner-shape: round;
+    background: transparent; cursor: pointer;
     color: var(--dsw-alias-label-tertiary, light-dark(#777, #999));
   }
   .tib-icon-btn:hover {
-    background: var(--dsw-alias-bg-base, light-dark(rgba(0,0,0,.06), rgba(255,255,255,.1)));
+    background: var(--dsw-alias-interactive-bg-hover, light-dark(rgba(0,0,0,.05), rgba(255,255,255,.07)));
     color: var(--dsw-alias-label-primary, light-dark(#222, #eee));
   }
   .tib-icon-btn.danger:hover {
@@ -190,13 +191,14 @@ const CSS = `
   .tib-panel-head:active { cursor: grabbing; }
   .tib-title { display: flex; align-items: center; gap: 7px; font-weight: 600; }
   .tib-count { font-weight: 500; font-size: .88em; color: var(--dsw-alias-label-tertiary, light-dark(#888, #999)); }
-  .tib-head-actions { display: flex; align-items: center; gap: 2px; }
-  .tib-refresh, .tib-close {
-    border: 0; background: transparent; cursor: pointer; font-size: 1em; padding: 4px 6px;
-    border-radius: 6px; color: var(--dsw-alias-label-tertiary, light-dark(#777, #999));
-    line-height: 1; display: inline-flex; align-items: center;
+  .tib-head-actions { display: flex; align-items: center; gap: 4px; }
+  .tib-panel-btn {
+    display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
+    border: none; border-radius: 50%; corner-shape: round;
+    background: transparent; cursor: pointer;
+    color: var(--dsw-alias-label-secondary, light-dark(#777, #999));
   }
-  .tib-refresh:hover, .tib-close:hover {
+  .tib-panel-btn:hover {
     background: var(--dsw-alias-interactive-bg-hover, light-dark(rgba(0,0,0,.05), rgba(255,255,255,.07)));
     color: var(--dsw-alias-label-primary, light-dark(#222, #eee));
   }
@@ -223,27 +225,13 @@ const CSS = `
     margin-top: 4px; font-size: .88em; letter-spacing: .01em;
     color: var(--dsw-alias-label-tertiary, light-dark(#888, #999));
   }
-  .tib-item-footer { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 8px; }
-  .tib-done, .tib-rm {
-    border-radius: 999px; cursor: pointer; font-size: .88em; padding: 3px 12px;
-    font-family: inherit; line-height: 1.5;
+  .tib-item-footer { display: flex; justify-content: flex-end; align-items: center; gap: 4px; margin-top: 6px; }
+  .tib-item-footer .tib-icon-btn {
+    color: var(--dsw-alias-label-tertiary, light-dark(#888, #999));
+    opacity: 0; transition: opacity 120ms ease;
   }
-  .tib-done {
-    border: 0;
-    background: var(--dsw-alias-brand-primary, light-dark(#4259d1, #7a9bff));
-    color: var(--dsw-alias-brand-primary-invert, #fff);
-  }
-  .tib-done:hover { opacity: .88; }
-  .tib-rm {
-    border: 0.5px solid var(--dsw-alias-border-l2, light-dark(#ddd, #444));
-    background: transparent;
-    color: var(--dsw-alias-label-primary-dimmed, light-dark(#666, #aaa));
-  }
-  .tib-rm:hover {
-    border-color: var(--dsw-alias-state-error-primary, light-dark(#d93025, #f28b82));
-    color: var(--dsw-alias-state-error-primary, light-dark(#d93025, #f28b82));
-    background: var(--dsw-alias-interactive-bg-hover-danger, transparent);
-  }
+  .tib-item:hover .tib-item-footer .tib-icon-btn,
+  .tib-item:focus-within .tib-item-footer .tib-icon-btn { opacity: 1; }
   .tib-path {
     padding: 7px 14px 9px; font-size: .82em;
     color: var(--dsw-alias-label-tertiary, light-dark(#999, #777));
@@ -598,10 +586,12 @@ function InboxPanel() {
           {state.pending > 0 ? <span className="tib-count">{String(state.pending)}</span> : null}
         </span>
         <span className="tib-head-actions">
-          <button className="tib-refresh" onClick={() => void refreshInbox()} title="刷新">
-            <IconRefreshOutline16 size={14} />
+          <button className="tib-panel-btn" onClick={() => void refreshInbox()} title="刷新">
+            <IconRefreshOutline16 size={16} />
           </button>
-          <button className="tib-close" onClick={() => storeUpdate({ panelOpen: false })} title="关闭">✕</button>
+          <button className="tib-panel-btn" onClick={() => storeUpdate({ panelOpen: false })} title="关闭">
+            <IconCloseOutline16 size={16} />
+          </button>
         </span>
       </div>
       <div className="tib-scroll">
@@ -632,8 +622,12 @@ function InboxPanel() {
                 ) : null}
                 {meta ? <div className="tib-item-meta">{meta}</div> : null}
                 <div className="tib-item-footer">
-                  <button className="tib-rm" onClick={() => void act('remove', item.id)}>删除</button>
-                  <button className="tib-done" onClick={() => void act('done', item.id)}>完成</button>
+                  <button className="tib-icon-btn danger" onClick={() => void act('remove', item.id)} title="删除">
+                    <IconCloseOutline16 size={16} />
+                  </button>
+                  <button className="tib-icon-btn" onClick={() => void act('done', item.id)} title="完成">
+                    <IconCheckOutline16 size={16} />
+                  </button>
                 </div>
               </div>
             )
