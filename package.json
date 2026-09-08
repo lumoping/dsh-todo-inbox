@@ -1,7 +1,7 @@
 {
   "name": "dsh-todo-inbox",
   "version": "0.1.0",
-  "description": "DSH web static plugin: a global cross-session todo inbox. Any session's agent records human-action todos (merge MR, approve work orders, reviews) via inbox_add/inbox_done/inbox_list; a root-scope sidebar button shows a count badge and a floating panel to view/open/done/remove them. Host persists to ~/.dsh/todo-inbox.json and serves /todo-inbox/api HTTP routes for the browser half.",
+  "description": "DSH web static plugin: a global cross-session todo inbox. Any session's agent records human-action todos (merge MR, approve work orders, reviews) via inbox_add/inbox_done/inbox_list; a root-scope sidebar entry shows a count badge and an expandable list to view, open, and complete them. Host persists to ~/.dsh/todo-inbox.json and serves /todo-inbox/api HTTP routes for the browser half.",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
