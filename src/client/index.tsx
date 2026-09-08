@@ -2,37 +2,34 @@
  * dsh-todo-inbox browser half: the global inbox, embedded in the sidebar.
  *
  * Wide sidebar: a collapsible section stacked above Settings — a header row
- * (checklist glyph + label + count badge + chevron) and an inline list of
- * pending items with hover-revealed icon actions. Rail sidebar: the standard
- * 36×36 circle button with a corner badge, opening a floating panel (the
- * rail has no room for a list; the panel is the rail-mode fallback surface).
+ * (checklist glyph + label + count badge) and an inline list of pending
+ * items with hover-revealed icon actions. Rail sidebar: the standard 36×36
+ * circle button with a corner badge; clicking it expands the sidebar (the
+ * rail has no room for a list).
  *
  * All state lives in a module-level store, so the sidebar's wide↔rail
- * crossfade (which remounts the slot occupant) never loses data, expansion,
- * or panel position. Polling starts once at apply time.
+ * crossfade (which remounts the slot occupant) never loses data or
+ * expansion. Polling starts once at apply time.
  *
  * `detail` renders a tiny safe markdown subset (bold / italic / inline code /
  * [text](url) / bare URLs / line breaks) as React elements — never raw HTML.
  *
- * The bundle is compiled to a window.__ModuleLoader__ closure; react,
- * react-dom/client and the ui-primitives icons resolve through the module
- * table at runtime, so this file must not runtime-import anything else
- * (type-only imports are erased).
+ * The bundle is compiled to a window.__ModuleLoader__ closure; react and the
+ * ui-primitives icons resolve through the module table at runtime, so this
+ * file must not runtime-import anything else (type-only imports are erased).
  *
  * @module dsh-todo-inbox/client
  */
 
 import React from 'react'
-import { createRoot } from 'react-dom/client'
 import {
   IconChecklistOutline14,
   IconCheckOutline16,
   IconCloseOutline16,
-  IconRefreshOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 
 export const name = 'todo-inbox-client'
-export const inject = ['slots', 'sessions']
+export const inject = ['slots', 'sessions', 'layout']
 
 /** Structural typing only — the loader supplies the real slot registry. */
 interface SlotBridge {
@@ -43,10 +40,15 @@ interface SlotBridge {
 interface SessionsBridge {
   open(id: string): void
 }
+/** Structural typing for the layout service we use: expand the sidebar. */
+interface LayoutBridge {
+  toggleSidebar(): void
+}
 interface ClientCtx {
   effect(callback: () => void | (() => void)): void
   slots: SlotBridge
   sessions: SessionsBridge
+  layout: LayoutBridge
 }
 
 const API = '/todo-inbox/api'
@@ -149,7 +151,7 @@ const CSS = `
     background: var(--dsw-alias-bg-base, light-dark(#f0f0f0, #333));
   }
 
-  /* ── rail mode: circle button + floating panel fallback ────────────── */
+  /* ── rail mode: circle button only (click expands the sidebar) ─────── */
   .tib-bell {
     display: flex; align-items: center; justify-content: center;
     width: 36px; height: 36px; padding: 0;
@@ -163,79 +165,6 @@ const CSS = `
   .tib-bell .tib-badge {
     position: absolute; top: 1px; right: 1px;
     min-width: 14px; height: 14px; line-height: 14px; padding: 0 4px; font-size: 9px;
-  }
-  .tib-panel {
-    position: fixed; left: 64px; bottom: 16px; width: 380px; max-width: calc(100vw - 32px);
-    z-index: 9999; overflow: hidden;
-    font-size: var(--dsh-content-font-size, 14px); line-height: 1.5;
-    border: 0; border-radius: 12px;
-    background: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-3, light-dark(#fff, #2a2a2c));
-    color: var(--dsw-alias-label-primary, light-dark(#222, #eee));
-    --dsw-elevation-stroke-color: var(--dsw-alias-border-l4, light-dark(rgba(0,0,0,.06), rgba(255,255,255,.09)));
-    box-shadow: var(--dsw-elevation-prominent,
-      0 0 0 0.5px var(--dsw-elevation-stroke-color),
-      0 3px 8px 0 rgba(0,0,0,.04), 0 0 20px 0 rgba(0,0,0,.05));
-    --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
-    --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
-    animation: tib-in 200ms cubic-bezier(.2, .9, .3, 1.2);
-  }
-  @keyframes tib-in {
-    from { opacity: 0; transform: translateY(10px) scale(.97); }
-    to   { opacity: 1; transform: translateY(0) scale(1); }
-  }
-  .tib-panel-head {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 12px 14px 10px; cursor: grab; user-select: none;
-    border-bottom: 0.5px solid var(--dsw-alias-border-l1, light-dark(#eee, #333));
-  }
-  .tib-panel-head:active { cursor: grabbing; }
-  .tib-title { display: flex; align-items: center; gap: 7px; font-weight: 600; }
-  .tib-count { font-weight: 500; font-size: .88em; color: var(--dsw-alias-label-tertiary, light-dark(#888, #999)); }
-  .tib-head-actions { display: flex; align-items: center; gap: 4px; }
-  .tib-panel-btn {
-    display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
-    border: none; border-radius: 50%; corner-shape: round;
-    background: transparent; cursor: pointer;
-    color: var(--dsw-alias-label-secondary, light-dark(#777, #999));
-  }
-  .tib-panel-btn:hover {
-    background: var(--dsw-alias-interactive-bg-hover, light-dark(rgba(0,0,0,.05), rgba(255,255,255,.07)));
-    color: var(--dsw-alias-label-primary, light-dark(#222, #eee));
-  }
-  .tib-scroll { max-height: min(480px, 62vh); overflow-y: auto; padding: 4px 8px; }
-  .tib-empty {
-    padding: 30px 12px; text-align: center;
-    color: var(--dsw-alias-label-tertiary, light-dark(#888, #999));
-  }
-  .tib-item {
-    padding: 11px 6px;
-    border-bottom: 0.5px solid var(--dsw-alias-border-l1, light-dark(#f0f0f0, #313131));
-  }
-  .tib-item:last-child { border-bottom: 0; }
-  .tib-item-title { font-weight: 600; word-break: break-word; line-height: 1.4; display: block; }
-  a.tib-item-link { color: inherit; text-decoration: none; }
-  a.tib-item-link:hover { color: var(--dsw-alias-link, light-dark(#1a73e8, #8ab4f8)); }
-  .tib-item-title-session { cursor: pointer; }
-  .tib-item-title-session:hover { color: var(--dsw-alias-link, light-dark(#1a73e8, #8ab4f8)); }
-  .tib-item-detail {
-    margin-top: 3px; white-space: pre-wrap; word-break: break-word; line-height: 1.5;
-    color: var(--dsw-alias-label-secondary, light-dark(#444, #ccc));
-  }
-  .tib-item-meta {
-    margin-top: 4px; font-size: .88em; letter-spacing: .01em;
-    color: var(--dsw-alias-label-tertiary, light-dark(#888, #999));
-  }
-  .tib-item-footer { display: flex; justify-content: flex-end; align-items: center; gap: 4px; margin-top: 6px; }
-  .tib-item-footer .tib-icon-btn {
-    color: var(--dsw-alias-label-tertiary, light-dark(#888, #999));
-    opacity: 0; transition: opacity 120ms ease;
-  }
-  .tib-item:hover .tib-item-footer .tib-icon-btn,
-  .tib-item:focus-within .tib-item-footer .tib-icon-btn { opacity: 1; }
-  .tib-path {
-    padding: 7px 14px 9px; font-size: .82em;
-    color: var(--dsw-alias-label-tertiary, light-dark(#999, #777));
-    border-top: 0.5px solid var(--dsw-alias-border-l1, light-dark(#eee, #333));
   }
 `
 
@@ -361,17 +290,12 @@ function openSourceSession(source: string): void {
 
 // ── module-level store (survives sidebar remounts) ─────────────────────────
 
-interface PanelPos { x: number; y: number }
-
 interface InboxStore {
   state: ListPayload
   loaded: boolean
   wide: boolean
   /** Wide-mode inline section expansion. */
   sectionOpen: boolean
-  /** Rail-mode floating panel visibility. */
-  panelOpen: boolean
-  pos: PanelPos | null
 }
 
 const inboxStore: {
@@ -379,17 +303,18 @@ const inboxStore: {
   listeners: Set<() => void>
   /** Client sessions service, set at apply time; null in the smoke test. */
   sessions: SessionsBridge | null
+  /** Client layout service, set at apply time; null in the smoke test. */
+  layout: LayoutBridge | null
 } = {
   current: {
     state: { ok: true, pending: 0, items: [] },
     loaded: false,
     wide: true,
     sectionOpen: true,
-    panelOpen: false,
-    pos: null,
   },
   listeners: new Set(),
   sessions: null,
+  layout: null,
 }
 
 function storeUpdate(patch: Partial<InboxStore>): void {
@@ -511,15 +436,15 @@ function InlineSection() {
   )
 }
 
-// ── rail mode: circle button + floating panel fallback ─────────────────────
+// ── rail mode: circle button; clicking expands the sidebar ─────────────────
 
 function RailButton() {
-  const { state, panelOpen } = useInboxStore()
+  const { state } = useInboxStore()
   return (
     <button
       className="tib-bell"
-      onClick={() => storeUpdate({ panelOpen: !panelOpen })}
-      title="待办"
+      onClick={() => inboxStore.layout?.toggleSidebar()}
+      title="待办（点击展开侧边栏）"
     >
       <IconChecklistOutline14 size={18} />
       {state.pending > 0 ? <span className="tib-badge">{String(state.pending)}</span> : null}
@@ -531,10 +456,7 @@ function RailButton() {
 function InboxAction(props: { wide?: boolean }) {
   const wide = Boolean(props.wide)
   React.useEffect(() => {
-    if (inboxStore.current.wide !== wide) {
-      // Leaving rail mode closes the fallback panel.
-      storeUpdate(wide ? { wide, panelOpen: false } : { wide })
-    }
+    if (inboxStore.current.wide !== wide) storeUpdate({ wide })
   }, [wide])
   return (
     <div className={`tib-root ${wide ? 'wide' : 'rail'}`}>
@@ -543,104 +465,9 @@ function InboxAction(props: { wide?: boolean }) {
   )
 }
 
-/** The rail-mode floating panel (portal-mounted; never in the sidebar tree). */
-function InboxPanel() {
-  const { state, loaded, wide, panelOpen, pos } = useInboxStore()
-  const panelRef = React.useRef<HTMLDivElement>(null)
-  const dragRef = React.useRef<{ startX: number; startY: number; baseX: number; baseY: number; moved: boolean } | null>(null)
-
-  const onHeaderPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
-    if (e.button !== 0 || (e.target as HTMLElement).closest('button') !== null) return
-    const el = panelRef.current
-    if (el === null) return
-    const rect = el.getBoundingClientRect()
-    dragRef.current = { startX: e.clientX, startY: e.clientY, baseX: rect.left, baseY: rect.top, moved: false }
-    const onMove = (ev: PointerEvent): void => {
-      const drag = dragRef.current
-      if (drag === null) return
-      const dx = ev.clientX - drag.startX
-      const dy = ev.clientY - drag.startY
-      if (!drag.moved && Math.abs(dx) < 4 && Math.abs(dy) < 4) return
-      drag.moved = true
-      storeUpdate({ pos: { x: drag.baseX + dx, y: drag.baseY + dy } })
-    }
-    const onUp = (): void => {
-      dragRef.current = null
-      document.removeEventListener('pointermove', onMove)
-      document.removeEventListener('pointerup', onUp)
-    }
-    document.addEventListener('pointermove', onMove)
-    document.addEventListener('pointerup', onUp)
-  }
-
-  if (!panelOpen || wide) return null
-  const panelStyle: React.CSSProperties = pos !== null
-    ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' }
-    : {}
-
-  return (
-    <div className="tib-panel" ref={panelRef} style={panelStyle}>
-      <div className="tib-panel-head" onPointerDown={onHeaderPointerDown}>
-        <span className="tib-title">
-          待办
-          {state.pending > 0 ? <span className="tib-count">{String(state.pending)}</span> : null}
-        </span>
-        <span className="tib-head-actions">
-          <button className="tib-panel-btn" onClick={() => void refreshInbox()} title="刷新">
-            <IconRefreshOutline16 size={16} />
-          </button>
-          <button className="tib-panel-btn" onClick={() => storeUpdate({ panelOpen: false })} title="关闭">
-            <IconCloseOutline16 size={16} />
-          </button>
-        </span>
-      </div>
-      <div className="tib-scroll">
-        {!loaded ? (
-          <div className="tib-empty">加载中…</div>
-        ) : state.items.length === 0 ? (
-          <div className="tib-empty">暂无</div>
-        ) : (
-          state.items.map((item) => {
-            const meta = itemMeta(item)
-            return (
-              <div className="tib-item" key={item.id}>
-                {item.link ? (
-                  <a className="tib-item-title tib-item-link" href={item.link} target="_blank" rel="noreferrer">
-                    {item.title}
-                  </a>
-                ) : (
-                  <div
-                    className="tib-item-title tib-item-title-session"
-                    title="点击跳转到来源会话"
-                    onClick={() => openSourceSession(item.source)}
-                  >
-                    {item.title}
-                  </div>
-                )}
-                {item.detail ? (
-                  <div className="tib-item-detail">{renderDetail(item.detail, item.id)}</div>
-                ) : null}
-                {meta ? <div className="tib-item-meta">{meta}</div> : null}
-                <div className="tib-item-footer">
-                  <button className="tib-icon-btn danger" onClick={() => void act('remove', item.id)} title="删除">
-                    <IconCloseOutline16 size={16} />
-                  </button>
-                  <button className="tib-icon-btn" onClick={() => void act('done', item.id)} title="完成">
-                    <IconCheckOutline16 size={16} />
-                  </button>
-                </div>
-              </div>
-            )
-          })
-        )}
-      </div>
-      {state.path ? <div className="tib-path">数据文件：{state.path}</div> : null}
-    </div>
-  )
-}
-
 export function apply(ctx: ClientCtx): void {
   inboxStore.sessions = ctx.sessions
+  inboxStore.layout = ctx.layout
   ctx.effect(() => {
     if (typeof document === 'undefined') return
     if (document.querySelector('style[data-plugin-css="todo-inbox"]') !== null) return
@@ -650,19 +477,10 @@ export function apply(ctx: ClientCtx): void {
     document.head.appendChild(tag)
   })
 
-  // The rail-mode panel is a React portal into document.body so it survives
-  // the sidebar's wide/rail crossfade and is never clipped by sidebar layout.
   ctx.effect(() => {
     if (typeof document === 'undefined') return
     startPolling()
-    const host = document.createElement('div')
-    host.id = 'todo-inbox-panel-host'
-    document.body.appendChild(host)
-    const root = createRoot(host)
-    root.render(<InboxPanel />)
     return () => {
-      root.unmount()
-      host.remove()
       if (pollTimer !== null) { clearInterval(pollTimer); pollTimer = null }
     }
   })

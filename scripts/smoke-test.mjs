@@ -208,22 +208,17 @@ const clientModule = { exports: {} }
 const clientRequire = (specifier) => {
   assert.ok(
     [
-      'react', 'react/jsx-runtime', 'react-dom', 'react-dom/client',
+      'react', 'react/jsx-runtime',
       'cordis', '@deepseek-ai/dsh-client-ui-slots',
       '@deepseek-ai/dsh-client-ui-primitives',
     ].includes(specifier),
     `unexpected runtime require: ${specifier}`,
   )
   // ui-primitives is a pure-ESM package that createRequire cannot load; the
-  // bundle only uses the icon component at render time (never during the
+  // bundle only uses the icon components at render time (never during the
   // smoke test), so a minimal stub satisfies the factory.
   if (specifier === '@deepseek-ai/dsh-client-ui-primitives') {
-    return { IconChecklistOutline14: () => null }
-  }
-  // createRoot needs a real DOM container; the smoke test has no DOM, so
-  // return a no-op root.
-  if (specifier === 'react-dom/client') {
-    return { createRoot: () => ({ render: () => {}, unmount: () => {} }) }
+    return { IconChecklistOutline14: () => null, IconCheckOutline16: () => null, IconCloseOutline16: () => null }
   }
   return nodeRequire(specifier)
 }
@@ -244,7 +239,7 @@ const factory = captured.factory
 const clientApi = factory(clientRequire)
 
 check('client plugin entry (name/inject/apply)', () => {
-  assert.deepEqual(clientApi.inject, ['slots', 'sessions'])
+  assert.deepEqual(clientApi.inject, ['slots', 'sessions', 'layout'])
   assert.equal(typeof clientApi.apply, 'function')
 })
 
@@ -256,6 +251,7 @@ const clientCtx = {
     register: (_options, component) => component,
   },
   sessions: { open: () => {} },
+  layout: { toggleSidebar: () => {} },
 }
 let styleTags = 0
 globalThis.document = {
