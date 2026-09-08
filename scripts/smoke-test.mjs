@@ -244,7 +244,7 @@ const factory = captured.factory
 const clientApi = factory(clientRequire)
 
 check('client plugin entry (name/inject/apply)', () => {
-  assert.deepEqual(clientApi.inject, ['slots'])
+  assert.deepEqual(clientApi.inject, ['slots', 'sessions'])
   assert.equal(typeof clientApi.apply, 'function')
 })
 
@@ -255,6 +255,7 @@ const clientCtx = {
     inject: (slot, factory2) => { injectedSlot = { slot, factory2 } },
     register: (_options, component) => component,
   },
+  sessions: { open: () => {} },
 }
 let styleTags = 0
 globalThis.document = {

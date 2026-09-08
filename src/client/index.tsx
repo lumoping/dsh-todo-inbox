@@ -32,16 +32,21 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 
 export const name = 'todo-inbox-client'
-export const inject = ['slots']
+export const inject = ['slots', 'sessions']
 
 /** Structural typing only — the loader supplies the real slot registry. */
 interface SlotBridge {
   inject(slot: string, factory: () => unknown): void
   register(options: { name: string; id?: string }, component: unknown): unknown
 }
+/** Structural typing for the sessions service we use: open a session by id. */
+interface SessionsBridge {
+  open(id: string): void
+}
 interface ClientCtx {
   effect(callback: () => void | (() => void)): void
   slots: SlotBridge
+  sessions: SessionsBridge
 }
 
 const API = '/todo-inbox/api'
@@ -105,6 +110,8 @@ const CSS = `
   }
   a.tib-row-title { color: inherit; text-decoration: none; }
   a.tib-row-title:hover { color: var(--dsw-alias-link, light-dark(#1a73e8, #8ab4f8)); }
+  .tib-row-title-session { cursor: pointer; }
+  .tib-row-title-session:hover { color: var(--dsw-alias-link, light-dark(#1a73e8, #8ab4f8)); }
   .tib-row-actions {
     display: flex; gap: 2px; flex: none;
     opacity: 0; transition: opacity 120ms ease;
@@ -206,6 +213,8 @@ const CSS = `
   .tib-item-title { font-weight: 600; word-break: break-word; line-height: 1.4; display: block; }
   a.tib-item-link { color: inherit; text-decoration: none; }
   a.tib-item-link:hover { color: var(--dsw-alias-link, light-dark(#1a73e8, #8ab4f8)); }
+  .tib-item-title-session { cursor: pointer; }
+  .tib-item-title-session:hover { color: var(--dsw-alias-link, light-dark(#1a73e8, #8ab4f8)); }
   .tib-item-detail {
     margin-top: 3px; white-space: pre-wrap; word-break: break-word; line-height: 1.5;
     color: var(--dsw-alias-label-secondary, light-dark(#444, #ccc));
@@ -352,6 +361,16 @@ export function renderDetail(text: string, keyBase: string): React.ReactNode[] {
   return out
 }
 
+/** Jump to the session that recorded this item (source = session id). */
+function openSourceSession(source: string): void {
+  if (source === '' || inboxStore.sessions === null) return
+  try {
+    inboxStore.sessions.open(source)
+  } catch (error) {
+    console.error('[todo-inbox] open source session failed', error)
+  }
+}
+
 // ── module-level store (survives sidebar remounts) ─────────────────────────
 
 interface PanelPos { x: number; y: number }
@@ -370,6 +389,8 @@ interface InboxStore {
 const inboxStore: {
   current: InboxStore
   listeners: Set<() => void>
+  /** Client sessions service, set at apply time; null in the smoke test. */
+  sessions: SessionsBridge | null
 } = {
   current: {
     state: { ok: true, pending: 0, items: [] },
@@ -380,6 +401,7 @@ const inboxStore: {
     pos: null,
   },
   listeners: new Set(),
+  sessions: null,
 }
 
 function storeUpdate(patch: Partial<InboxStore>): void {
@@ -462,7 +484,13 @@ function InlineSection() {
                         {item.title}
                       </a>
                     ) : (
-                      <span className="tib-row-title" title={item.title}>{item.title}</span>
+                      <span
+                        className="tib-row-title tib-row-title-session"
+                        title={`${item.title}\n点击跳转到来源会话`}
+                        onClick={() => openSourceSession(item.source)}
+                      >
+                        {item.title}
+                      </span>
                     )}
                     <span className="tib-row-actions">
                       <button
@@ -591,7 +619,13 @@ function InboxPanel() {
                     {item.title}
                   </a>
                 ) : (
-                  <div className="tib-item-title">{item.title}</div>
+                  <div
+                    className="tib-item-title tib-item-title-session"
+                    title="点击跳转到来源会话"
+                    onClick={() => openSourceSession(item.source)}
+                  >
+                    {item.title}
+                  </div>
                 )}
                 {item.detail ? (
                   <div className="tib-item-detail">{renderDetail(item.detail, item.id)}</div>
@@ -612,6 +646,7 @@ function InboxPanel() {
 }
 
 export function apply(ctx: ClientCtx): void {
+  inboxStore.sessions = ctx.sessions
   ctx.effect(() => {
     if (typeof document === 'undefined') return
     if (document.querySelector('style[data-plugin-css="todo-inbox"]') !== null) return
