@@ -25,9 +25,11 @@ const nodeRequire = createRequire(import.meta.url)
 const ROOT = new URL('..', import.meta.url).pathname
 let failures = 0
 
-function check(name, fn) {
+async function check(name, fn) {
   try {
-    fn()
+    // `await` matters: most checks are async, and a swallowed rejection would
+    // report a false pass (and never reach the failure count).
+    await fn()
     console.log(`  ok  ${name}`)
   } catch (error) {
     failures += 1
@@ -49,12 +51,42 @@ const ctx = {
   webServer: { register: (route) => { registeredRoutes.push(route); return () => {} } },
   systemPrompt: { section: (section) => { registeredSections.push(section); return () => {} } },
   effect: (fn) => { fn() },
+  // `sessionQuery` is taken lazily (ctx.get) so the smoke test can decide
+  // whether the optional service is mounted.
+  get: (serviceName) => (serviceName === 'sessionQuery' ? sessionQueryStub ?? undefined : undefined),
+}
+
+/**
+ * Stand-in for the session-query service: a synthetic log whose human request
+ * and tool calls sit around the probed item's `createdAt`, which is what the
+ * anchor is derived from.
+ */
+const sessionQueryStub = {
+  readSession: async (sessionId) => {
+    const onDisk = JSON.parse(readFileSync(dataPath, 'utf8'))
+    const item = onDisk.items.find((candidate) => candidate.source === sessionId)
+    const base = Date.parse(item.createdAt)
+    const at = (offsetSeconds) => new Date(base + offsetSeconds * 1000).toISOString()
+    return {
+      session: { id: sessionId },
+      events: [
+        { seq: 0, time: at(-300), type: 'turn/start', data: {} },
+        { seq: 1, time: at(-290), type: 'user/message', data: { content: [{ type: 'text', text: '把 RESP 那两个 PR merge 掉' }] } },
+        { seq: 2, time: at(-280), type: 'tool/call', data: { name: 'todo_write', arguments: '{}' } },
+        { seq: 3, time: at(-270), type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '收到，我先记到待办里' }] } } },
+        // Reasoning-only / empty user message: must not become the excerpt prompt.
+        { seq: 4, time: at(-120), type: 'user/message', data: { content: [{ type: 'reasoning', text: '不该出现' }, { type: 'text', text: '' }] } },
+        { seq: 5, time: at(-30), type: 'tool/call', data: { name: 'inbox_add', arguments: '{}' } },
+        { seq: 6, time: at(0), type: 'turn/end', data: { reason: { kind: 'completed' } } },
+      ],
+    }
+  },
 }
 
 const { apply } = await import('../lib/index.js')
 
 console.log('\n[host] loading and mounting lib/index.js')
-check('plugin entry exports (name/inject/apply)', () => {
+await check('plugin entry exports (name/inject/apply)', () => {
   const mod = { apply }
   assert.equal(typeof mod.apply, 'function')
   assert.equal(typeof apply, 'function')
@@ -63,7 +95,7 @@ check('plugin entry exports (name/inject/apply)', () => {
 const host = await import('../lib/index.js')
 const name = host.name
 const inject = host.inject
-check('name = todo-inbox, injects tools/webServer/systemPrompt', () => {
+await check('name = todo-inbox, injects tools/webServer/systemPrompt', () => {
   assert.equal(name, 'todo-inbox')
   assert.deepEqual(inject, ['tools', 'webServer', 'systemPrompt'])
 })
@@ -75,16 +107,16 @@ const tool = (toolName) => {
   assert.ok(found, `tool ${toolName} registered`)
   return found
 }
-check('four model tools registered', () => {
+await check('four model tools registered', () => {
   assert.deepEqual(registeredTools.map((t) => t.name).sort(), ['inbox_add', 'inbox_done', 'inbox_list', 'inbox_update'])
 })
-check('one /todo-inbox/api prefix route registered', () => {
+await check('one /todo-inbox/api prefix route registered', () => {
   assert.equal(registeredRoutes.length, 1)
   assert.equal(registeredRoutes[0].kind, 'prefix')
   assert.equal(registeredRoutes[0].path, '/todo-inbox/api')
 })
 
-check('prompt discipline section registered', () => {
+await check('prompt discipline section registered', () => {
   assert.equal(registeredSections.length, 1)
   assert.equal(registeredSections[0].name, 'todo-inbox:discipline')
   const text = registeredSections[0].text
@@ -96,15 +128,19 @@ check('prompt discipline section registered', () => {
   assert.ok(/40 characters/.test(text), 'bounds the title length')
 })
 
+/** Real dsh session ids are `session-<uuid>`; the agent hands over the bare uuid. */
+const SESSION_UUID = '11111111-2222-4333-8444-555555555555'
+const SESSION_ID = `session-${SESSION_UUID}`
+
 const exec = async (toolName, args) => {
   const t = tool(toolName)
-  const result = await t.execute(args, { agent: { sessionId: 'smoke-session' } })
+  const result = await t.execute(args, { agent: { sessionId: SESSION_UUID } })
   return result
 }
 
 console.log('\n[host] tool round trip')
 let added
-check('inbox_add persists an item', async () => {
+await check('inbox_add persists an item', async () => {
   const result = await exec('inbox_add', { type: 'merge-mr', title: 'merge MR !1234', link: 'https://mr/1234' })
   assert.equal(result.ok, true)
   assert.equal(result.pending, 1)
@@ -112,15 +148,16 @@ check('inbox_add persists an item', async () => {
   const onDisk = JSON.parse(readFileSync(dataPath, 'utf8'))
   assert.equal(onDisk.items.length, 1)
   assert.equal(onDisk.items[0].title, 'merge MR !1234')
-  assert.equal(onDisk.items[0].source, 'smoke-session')
+  // normalizeSource canonicalizes to the prefixed id sessions.open()/uiWorkspace expects.
+  assert.equal(onDisk.items[0].source, SESSION_ID)
 })
-check('inbox_list returns the pending item', async () => {
+await check('inbox_list returns the pending item', async () => {
   const result = await exec('inbox_list', {})
   assert.equal(result.pending, 1)
   assert.equal(result.items.length, 1)
   assert.equal(result.items[0].id, added)
 })
-check('inbox_update rewrites fields in place, no new row', async () => {
+await check('inbox_update rewrites fields in place, no new row', async () => {
   const before = JSON.parse(readFileSync(dataPath, 'utf8')).items[0]
   const result = await exec('inbox_update', {
     id: added, title: 'merge MR !1234 (rebase first)', type: 'review',
@@ -136,9 +173,9 @@ check('inbox_update rewrites fields in place, no new row', async () => {
   assert.equal(after.title, 'merge MR !1234 (rebase first)')
   assert.equal(after.type, 'review')
   assert.equal(after.detail, 'CI green, needs rebase')
-  assert.equal(after.source, 'smoke-session', 'update keeps the source session')
+  assert.equal(after.source, SESSION_ID, 'update keeps the source session')
 })
-check('inbox_update leaves omitted fields alone and clears on empty string', async () => {
+await check('inbox_update leaves omitted fields alone and clears on empty string', async () => {
   const result = await exec('inbox_update', { id: added, detail: '', due: '' })
   assert.equal(result.ok, true)
   const after = JSON.parse(readFileSync(dataPath, 'utf8')).items[0]
@@ -147,7 +184,7 @@ check('inbox_update leaves omitted fields alone and clears on empty string', asy
   assert.equal(after.link, 'https://mr/1234', 'an omitted link stays untouched')
   assert.equal(after.title, 'merge MR !1234 (rebase first)', 'an omitted title stays untouched')
 })
-check('inbox_update / inbox_done report why they failed', async () => {
+await check('inbox_update / inbox_done report why they failed', async () => {
   const blank = await exec('inbox_update', { id: added, title: '   ' })
   assert.equal(blank.ok, false)
   assert.equal(blank.error, 'empty_title')
@@ -161,7 +198,7 @@ check('inbox_update / inbox_done report why they failed', async () => {
   assert.equal(onDisk.items.length, 1)
   assert.equal(onDisk.items[0].title, 'merge MR !1234 (rebase first)', 'a rejected update changes nothing')
 })
-check('inbox_done marks it done (no longer pending)', async () => {
+await check('inbox_done marks it done (no longer pending)', async () => {
   const result = await exec('inbox_done', { id: added })
   assert.equal(result.ok, true)
   assert.equal(result.pending, 0)
@@ -172,7 +209,7 @@ check('inbox_done marks it done (no longer pending)', async () => {
 })
 
 console.log('\n[host] external file edit poll')
-check('poll tick reloads an external edit', async () => {
+await check('poll tick reloads an external edit', async () => {
   const before = JSON.parse(readFileSync(dataPath, 'utf8'))
   before.items.push({
     id: 'external-1', type: 'review', title: 'review PR #9', detail: '', link: '',
@@ -205,20 +242,20 @@ const send = async (method, pathname, body) => {
   return res
 }
 let httpResult
-check('GET /todo-inbox/api/items', async () => {
+await check('GET /todo-inbox/api/items', async () => {
   const res = await send('GET', '/todo-inbox/api/items')
   assert.equal(res.status, 200)
   assert.equal(res.payload.ok, true)
   assert.equal(res.payload.pending, 1)
   httpResult = res.payload
 })
-check('POST /todo-inbox/api/done', async () => {
+await check('POST /todo-inbox/api/done', async () => {
   const res = await send('POST', '/todo-inbox/api/done', { id: 'external-1' })
   assert.equal(res.status, 200)
   assert.equal(res.payload.ok, true)
   assert.equal(res.payload.pending, 0)
 })
-check('POST /todo-inbox/api/add then remove', async () => {
+await check('POST /todo-inbox/api/add then remove', async () => {
   const addRes = await send('POST', '/todo-inbox/api/add', { title: 'approve work order #77', type: 'approve-order' })
   assert.equal(addRes.payload.ok, true)
   const id = addRes.payload.id
@@ -226,7 +263,7 @@ check('POST /todo-inbox/api/add then remove', async () => {
   assert.equal(rmRes.payload.ok, true)
   assert.equal(rmRes.payload.pending, 0)
 })
-check('cross-origin request is fenced', async () => {
+await check('cross-origin request is fenced', async () => {
   const evil = {
     method: 'GET', url: '/todo-inbox/api/items',
     headers: { host: '127.0.0.1:3080', origin: 'https://evil.example' },
@@ -235,6 +272,65 @@ check('cross-origin request is fenced', async () => {
   const res = { status: 0, payload: null, writeHead(s, _h) { this.status = s }, end(t) { this.payload = JSON.parse(t) } }
   await registeredRoutes[0].handler(evil, res)
   assert.equal(res.status, 403)
+})
+
+console.log('\n[host] source-context excerpt (dsh gives no in-session jump, so we quote the moment)')
+let probeId
+await check('inbox_add tags the item with its session source', async () => {
+  const result = await exec('inbox_add', { type: 'other', title: 'context probe' })
+  probeId = result.id
+})
+
+await check('GET context quotes the request and the turn it belonged to', async () => {
+  const res = await send('GET', `/todo-inbox/api/context?id=${probeId}`)
+  assert.equal(res.status, 200)
+  assert.equal(res.payload.ok, true)
+  assert.equal(res.payload.sessionId, SESSION_ID)
+  assert.equal(res.payload.turn, 1, 'counts the turn/start preceding the anchor')
+  assert.deepEqual(res.payload.lines, [
+    { role: 'you', text: '把 RESP 那两个 PR merge 掉' },
+    { role: 'tool', text: 'todo_write' },
+    { role: 'agent', text: '收到，我先记到待办里' },
+    { role: 'tool', text: 'inbox_add' },
+  ])
+})
+
+await check('context ignores empty and reasoning-only user messages', async () => {
+  const res = await send('GET', `/todo-inbox/api/context?id=${probeId}`)
+  const lines = res.payload.lines
+  assert.equal(lines.filter((line) => line.role === 'you').length, 1, 'one prompt only')
+  assert.ok(!lines.some((line) => line.text.includes('不该出现')), 'reasoning never leaks')
+})
+
+await check('context reports not_found for an unknown id', async () => {
+  const res = await send('GET', '/todo-inbox/api/context?id=nope')
+  assert.equal(res.payload.ok, false)
+  assert.equal(res.payload.error, 'not_found')
+})
+
+await check('context reports no_session for a UI-added item', async () => {
+  const added2 = await send('POST', '/todo-inbox/api/add', { title: 'added from the UI' })
+  const res = await send('GET', `/todo-inbox/api/context?id=${added2.payload.id}`)
+  assert.equal(res.payload.ok, false)
+  assert.equal(res.payload.error, 'no_session')
+})
+
+await check('context degrades to unavailable when session-query is absent', async () => {
+  const saved = sessionQueryStub.readSession
+  sessionQueryStub.readSession = undefined
+  const res = await send('GET', `/todo-inbox/api/context?id=${probeId}`)
+  sessionQueryStub.readSession = saved
+  assert.equal(res.payload.ok, false)
+  assert.equal(res.payload.error, 'unavailable')
+})
+
+await check('context reports unreadable when the log read throws', async () => {
+  const saved = sessionQueryStub.readSession
+  sessionQueryStub.readSession = async () => { throw new Error('boom') }
+  const res = await send('GET', `/todo-inbox/api/context?id=${probeId}`)
+  sessionQueryStub.readSession = saved
+  assert.equal(res.payload.ok, false)
+  assert.equal(res.payload.error, 'unreadable')
 })
 
 // ── browser half ────────────────────────────────────────────────────────────
@@ -279,7 +375,7 @@ const clientRequire = (specifier) => {
 // eslint-disable-next-line no-new-func
 new Function('window', 'require', 'module', 'exports', clientSource)(globalThis.window, clientRequire, clientModule, clientModule.exports)
 
-check('bundle registers id dsh-todo-inbox', () => {
+await check('bundle registers id dsh-todo-inbox', () => {
   assert.ok(captured, 'window.__ModuleLoader__.load was called')
   assert.equal(captured.id, 'dsh-todo-inbox')
 })
@@ -289,7 +385,7 @@ const factory = captured.factory
 // plugin API — the loader captures that return value, not an outer object.
 const clientApi = factory(clientRequire)
 
-check('client plugin entry (name/inject/apply)', () => {
+await check('client plugin entry (name/inject/apply)', () => {
   assert.deepEqual(clientApi.inject, ['slots', 'uiWorkspace', 'layout'])
   assert.equal(typeof clientApi.apply, 'function')
 })
@@ -314,13 +410,13 @@ globalThis.document = {
   body: { appendChild: () => {} },
 }
 clientApi.apply(clientCtx)
-check('apply() injects sidebar.footer.action', () => {
+await check('apply() injects sidebar.footer.action', () => {
   assert.equal(injectedSlot.slot, 'sidebar.footer.action')
 })
-check('apply() injects the plugin style tag', () => {
+await check('apply() injects the plugin style tag', () => {
   assert.equal(styleTags, 1)
 })
-check('detail click navigates through uiWorkspace.openSession', () => {
+await check('detail click navigates through uiWorkspace.openSession', () => {
   clientApi.openSourceSession('session-abc')
   assert.deepEqual(openedSessions, ['session-abc'])
   // A source that is not a session id must never navigate anywhere.
@@ -328,25 +424,25 @@ check('detail click navigates through uiWorkspace.openSession', () => {
   clientApi.openSourceSession('')
   assert.deepEqual(openedSessions, ['session-abc'])
 })
-check('client bundle drops the removed sessions.open face', () => {
+await check('client bundle drops the removed sessions.open face', () => {
   assert.ok(clientSource.includes('openSession'), 'should call uiWorkspace.openSession')
   assert.ok(!clientSource.includes('sessions.open('), 'should not call the removed sessions.open')
 })
 
 console.log('\n[client] renderDetail (safe markdown subset)')
-check('bold / italic / code / link / bare URL', () => {
+await check('bold / italic / code / link / bare URL', () => {
   const nodes = clientApi.renderDetail('**b** *i* `c` [x](https://a.b) https://c.d', 'k')
   // Separator spaces render as plain text nodes; compare element types only.
   const types = nodes.filter((n) => typeof n !== 'string').map((n) => n.type)
   assert.deepEqual(types, ['strong', 'em', 'code', 'a', 'a'])
 })
-check('unsafe protocol renders as literal text, never a link', () => {
+await check('unsafe protocol renders as literal text, never a link', () => {
   const nodes = clientApi.renderDetail('see [x](javascript:alert(1)) ok', 'k')
   const joined = nodes.map((n) => (typeof n === 'string' ? n : `[${n.type}]`)).join('')
   assert.ok(joined.includes('[x](javascript:alert(1))'))
   assert.ok(!joined.includes('[a]'), 'javascript: must not become an <a>')
 })
-check('unmatched markdown stays literal', () => {
+await check('unmatched markdown stays literal', () => {
   const nodes = clientApi.renderDetail('**unclosed', 'k')
   assert.equal(nodes.join(''), '**unclosed')
 })

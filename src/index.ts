@@ -60,14 +60,151 @@ export interface TodoInboxConfig {
 /** API prefix for the browser half (registered as a webserver prefix route). */
 const API_PREFIX = '/todo-inbox/api'
 
+/** A bare (unprefixed) session id: the persisted `header.id` form agents used to record. */
+const BARE_SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
+
 /**
- * Normalize a session source to the canonical session id `sessions.open()`
- * expects: the client session list uses the persisted `header.id`, which
- * carries the `session-` prefix. Sources recorded before this fix (bare ids)
- * are upgraded to the prefixed form on read.
+ * Normalize a session source to the canonical session id the client services
+ * expect: the client session list uses the persisted `header.id`, which carries
+ * the `session-` prefix. Sources recorded before that fix (bare ids) are
+ * upgraded on read.
+ *
+ * Only a bare UUID is rewritten. Sources that are not session ids at all — an
+ * empty string, or `api` for an item added from the sidebar — must pass
+ * through untouched, or they would masquerade as a session (`api` would become
+ * the bogus `session-api`) and the UI would offer a jump to nowhere.
  */
 function normalizeSource(source: string): string {
-  return source === '' || source.startsWith('session-') ? source : `session-${source}`
+  if (source === '' || source.startsWith('session-')) return source
+  return BARE_SESSION_ID.test(source) ? `session-${source}` : source
+}
+
+// ── "where did this come from" excerpt ─────────────────────────────────────
+//
+// dsh 0.2 exposes no way to open a Session *at a position* (uiWorkspace's
+// navigation state is only { sessionId, subagentAddress }, the conversation
+// service has no scroll, and the transcript has no URL deep link), so the
+// sidebar cannot scroll the user back to the moment an item was recorded.
+// Instead this half reads the source Session's log and hands the browser half
+// a compact excerpt of that moment, which it renders inline.
+
+/** One line of the excerpt, in the order it happened. */
+interface ContextLine {
+  /** `you` = the human request, `agent` = assistant prose, `tool` = a tool call. */
+  role: 'you' | 'agent' | 'tool'
+  text: string
+}
+
+/** Structural view of a Session event; unknown shapes are skipped, never thrown on. */
+interface LooseEvent {
+  seq?: unknown
+  time?: unknown
+  type?: unknown
+  data?: unknown
+}
+
+const CONTEXT_PROMPT_MAX = 280
+const CONTEXT_AGENT_MAX = 200
+const CONTEXT_AGENT_LINES = 2
+const CONTEXT_TOOL_LINES = 6
+
+/** Collapse whitespace and clip to `max` characters (ellipsis included). */
+function clip(value: string, max: number): string {
+  const flat = value.replace(/\s+/gu, ' ').trim()
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
+}
+
+/** Join the text blocks of one content array; reasoning and unknown blocks are dropped. */
+function contentText(value: unknown): string {
+  if (!Array.isArray(value)) return ''
+  const parts: string[] = []
+  for (const block of value) {
+    if (typeof block !== 'object' || block === null) continue
+    const candidate = block as { type?: unknown; text?: unknown }
+    if (candidate.type === 'text' && typeof candidate.text === 'string') parts.push(candidate.text)
+  }
+  return parts.join('\n').trim()
+}
+
+function eventTime(event: LooseEvent): number | null {
+  if (typeof event.time !== 'string') return null
+  const parsed = Date.parse(event.time)
+  return Number.isNaN(parsed) ? null : parsed
+}
+
+function eventData(event: LooseEvent): Record<string, unknown> {
+  return typeof event.data === 'object' && event.data !== null ? event.data as Record<string, unknown> : {}
+}
+
+/**
+ * Build the excerpt for one item from its source Session's event log.
+ *
+ * The anchor is the last event recorded at or before the item's `createdAt`
+ * (the item is written inside the turn that earned it, so the human request
+ * that caused it is the nearest `user/message` before that point). Only the
+ * turn's own slice is read — later messages in the Session are irrelevant.
+ * @param events - complete event log of the source Session, ascending.
+ * @param createdAt - the item's creation instant (ISO 8601).
+ * @returns the 1-based turn number and the excerpt lines.
+ */
+function buildExcerpt(events: readonly LooseEvent[], createdAt: string): { turn: number; lines: ContextLine[] } {
+  const at = Date.parse(createdAt)
+  let anchor = -1
+  if (!Number.isNaN(at)) {
+    for (let index = 0; index < events.length; index += 1) {
+      const time = eventTime(events[index] as LooseEvent)
+      if (time === null) continue
+      if (time > at) break
+      anchor = index
+    }
+  }
+  if (anchor < 0) anchor = events.length === 0 ? -1 : 0
+
+  let turn = 0
+  for (let index = 0; index <= anchor; index += 1) {
+    if ((events[index] as LooseEvent).type === 'turn/start') turn += 1
+  }
+
+  // Nearest human request at or before the anchor: the one that earned the item.
+  let prompt = ''
+  let promptIndex = -1
+  for (let index = anchor; index >= 0; index -= 1) {
+    const event = events[index] as LooseEvent
+    if (event.type !== 'user/message') continue
+    const text = contentText(eventData(event).content)
+    if (text.length === 0) continue
+    prompt = text
+    promptIndex = index
+    break
+  }
+
+  const lines: ContextLine[] = []
+  if (prompt.length > 0) lines.push({ role: 'you', text: clip(prompt, CONTEXT_PROMPT_MAX) })
+
+  let agentLines = 0
+  let toolLines = 0
+  const seenTools = new Set<string>()
+  for (let index = promptIndex + 1; index <= anchor; index += 1) {
+    const event = events[index] as LooseEvent
+    if (event.type === 'assistant/message' && agentLines < CONTEXT_AGENT_LINES) {
+      const data = eventData(event)
+      const message = typeof data.message === 'object' && data.message !== null ? data.message as Record<string, unknown> : {}
+      const text = contentText(message.content)
+      if (text.length > 0) {
+        lines.push({ role: 'agent', text: clip(text, CONTEXT_AGENT_MAX) })
+        agentLines += 1
+      }
+      continue
+    }
+    if (event.type === 'tool/call' && toolLines < CONTEXT_TOOL_LINES) {
+      const toolName = String(eventData(event).name ?? '')
+      if (toolName === '' || seenTools.has(toolName)) continue
+      seenTools.add(toolName)
+      lines.push({ role: 'tool', text: toolName })
+      toolLines += 1
+    }
+  }
+  return { turn, lines }
 }
 
 /**
@@ -387,6 +524,45 @@ export function apply(ctx: Context, config?: TodoInboxConfig): void {
     res.end(JSON.stringify(value))
   }
 
+  /**
+   * Build the "where did this come from" excerpt for one item.
+   *
+   * The source Session log is read through the optional `sessionQuery` service
+   * (mounted by dsh-session-query-sqlite, part of the base bundle). It is taken
+   * lazily with `ctx.get` rather than declared in `inject`, so a profile without
+   * session-query still loads this plugin — the excerpt then reports
+   * `unavailable` instead of taking the whole plugin tree down. Every other
+   * failure mode also degrades to an explicit code, never a thrown request.
+   */
+  async function contextFor(id: string): Promise<Record<string, unknown>> {
+    const item = items.find((candidate) => candidate.id === id)
+    if (item === undefined) return { ok: false, error: 'not_found' }
+    const sessionId = normalizeSource(item.source)
+    if (!sessionId.startsWith('session-')) return { ok: false, error: 'no_session' }
+    const query = (ctx as unknown as { get?: (name: string) => unknown }).get?.('sessionQuery') as
+      { readSession?: (sessionId: string) => Promise<{ events?: unknown }> } | undefined
+    if (query === undefined || typeof query.readSession !== 'function') return { ok: false, error: 'unavailable' }
+
+    let events: readonly LooseEvent[]
+    try {
+      const log = await query.readSession(sessionId)
+      events = Array.isArray(log.events) ? log.events as readonly LooseEvent[] : []
+    } catch {
+      return { ok: false, error: 'unreadable' }
+    }
+    if (events.length === 0) return { ok: false, error: 'no_history' }
+
+    const excerpt = buildExcerpt(events, item.createdAt)
+    return {
+      ok: true,
+      id,
+      sessionId,
+      createdAt: item.createdAt,
+      turn: excerpt.turn,
+      lines: excerpt.lines,
+    }
+  }
+
   const apiHandler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     if (!fence(req)) {
       writeJson(res, 403, { ok: false, error: 'forbidden' })
@@ -395,6 +571,11 @@ export function apply(ctx: Context, config?: TodoInboxConfig): void {
     const pathname = new URL(req.url ?? '/', 'http://dsh.local').pathname
     const method = pathname.slice(API_PREFIX.length + 1) // '/todo-inbox/api/<method>'
     try {
+      if (req.method === 'GET' && method === 'context') {
+        const id = new URL(req.url ?? '/', 'http://dsh.local').searchParams.get('id') ?? ''
+        writeJson(res, 200, await contextFor(id))
+        return
+      }
       if (req.method === 'GET' && method === 'items') {
         writeJson(res, 200, { ok: true, pending: pendingCount(), items: pendingItems().map(compact), path: dataPath })
         return
