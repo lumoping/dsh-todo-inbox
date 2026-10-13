@@ -1,6 +1,6 @@
 {
   "name": "dsh-todo-inbox",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DSH web static plugin: a global cross-session todo inbox. Any session's agent records human-action todos (merge MR, approve work orders, reviews) via inbox_add/inbox_done/inbox_list; a root-scope sidebar entry shows a count badge and an expandable list to view, open, and complete them. Host persists to ~/.dsh/todo-inbox.json and serves /todo-inbox/api HTTP routes for the browser half.",
   "repository": {
     "type": "git",
@@ -51,21 +51,23 @@
     "test": "node scripts/smoke-test.mjs"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.2",
-    "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.2-rc.1 <0.2.0-0",
-    "@deepseek-ai/dsh-fs": ">=0.1.2-rc.1 <0.2.0-0",
-    "@deepseek-ai/dsh-host-webserver": ">=0.1.2-rc.1 <0.2.0-0",
-    "@deepseek-ai/dsh-system-prompt": ">=0.1.2-rc.1 <0.2.0-0",
-    "@deepseek-ai/dsh-tools": ">=0.1.2-rc.1 <0.2.0-0",
-    "react": "^18.2.0"
+    "@deepseek-ai/cordis": ">=4.0.2",
+    "@deepseek-ai/dsh-client-modules": ">=0.1.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.1.2-rc.1",
+    "@deepseek-ai/dsh-fs": ">=0.1.2-rc.1",
+    "@deepseek-ai/dsh-host-webserver": ">=0.1.2-rc.1",
+    "@deepseek-ai/dsh-system-prompt": ">=0.1.2-rc.1",
+    "@deepseek-ai/dsh-tools": ">=0.1.2-rc.1",
+    "react": ">=18.2.0"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.2",
-    "@deepseek-ai/dsh-client-ui-primitives": "0.1.2-rc.1",
-    "@deepseek-ai/dsh-fs": "0.1.2-rc.1",
-    "@deepseek-ai/dsh-host-webserver": "0.1.2-rc.1",
-    "@deepseek-ai/dsh-system-prompt": "0.1.2-rc.1",
-    "@deepseek-ai/dsh-tools": "0.1.2-rc.1",
+    "@deepseek-ai/cordis": "4.0.5-alpha.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-fs": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-host-webserver": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-system-prompt": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-tools": "0.2.1-alpha.2",
     "@types/node": "^24.0.0",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.1",

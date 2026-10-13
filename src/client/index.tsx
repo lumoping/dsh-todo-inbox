@@ -23,9 +23,9 @@
 
 import React from 'react'
 import {
-  IconChecklistOutline14,
-  IconCheckOutline16,
-  IconCloseOutline16,
+  IconChecklistOutlineRegular,
+  IconCheckOutlineRegular,
+  IconCloseOutlineRegular,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 
 export const name = 'todo-inbox-client'
@@ -376,7 +376,7 @@ function InlineSection() {
         onClick={() => storeUpdate({ sectionOpen: !sectionOpen })}
         title="待办"
       >
-        <span className="tib-head-icon"><IconChecklistOutline14 size={16} /></span>
+        <span className="tib-head-icon"><IconChecklistOutlineRegular size={16} /></span>
         <span className="tib-head-label">待办</span>
         {state.pending > 0 ? <span className="tib-badge">{String(state.pending)}</span> : null}
       </button>
@@ -405,14 +405,14 @@ function InlineSection() {
                         onClick={() => void act('done', item.id)}
                         title="完成"
                       >
-                        <IconCheckOutline16 size={14} />
+                        <IconCheckOutlineRegular size={14} />
                       </button>
                       <button
                         className="tib-icon-btn danger"
                         onClick={() => void act('remove', item.id)}
                         title="删除"
                       >
-                        <IconCloseOutline16 size={14} />
+                        <IconCloseOutlineRegular size={14} />
                       </button>
                     </span>
                   </div>
@@ -446,7 +446,7 @@ function RailButton() {
       onClick={() => inboxStore.layout?.toggleSidebar()}
       title="待办（点击展开侧边栏）"
     >
-      <IconChecklistOutline14 size={18} />
+      <IconChecklistOutlineRegular size={18} />
       {state.pending > 0 ? <span className="tib-badge">{String(state.pending)}</span> : null}
     </button>
   )

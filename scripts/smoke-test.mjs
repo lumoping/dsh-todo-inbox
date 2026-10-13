@@ -219,10 +219,9 @@ const clientRequire = (specifier) => {
   // smoke test), so a minimal stub satisfies the factory.
   if (specifier === '@deepseek-ai/dsh-client-ui-primitives') {
     return {
-      IconChecklistOutline14: () => null,
-      IconCheckOutline16: () => null,
-      IconCloseOutline16: () => null,
-      IconRightUpOutline16: () => null,
+      IconChecklistOutlineRegular: () => null,
+      IconCheckOutlineRegular: () => null,
+      IconCloseOutlineRegular: () => null,
     }
   }
   return nodeRequire(specifier)
