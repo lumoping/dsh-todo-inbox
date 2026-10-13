@@ -1,6 +1,6 @@
 {
   "name": "dsh-todo-inbox",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "DSH web static plugin: a global cross-session todo inbox. Any session's agent records human-action todos (merge MR, approve work orders, reviews) via inbox_add/inbox_done/inbox_list; a root-scope sidebar entry shows a count badge and an expandable list to view, open, and complete them. Host persists to ~/.dsh/todo-inbox.json and serves /todo-inbox/api HTTP routes for the browser half.",
   "repository": {
     "type": "git",
@@ -31,6 +31,7 @@
     "client": {
       "inject": [
         "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-workspace",
         "@deepseek-ai/dsh-client-modules"
       ],
       "platform": "web"
@@ -55,6 +56,7 @@
     "@deepseek-ai/dsh-client-modules": ">=0.1.2-rc.1",
     "@deepseek-ai/dsh-client-ui-primitives": ">=0.1.2-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": ">=0.1.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-workspace": ">=0.1.2-rc.1",
     "@deepseek-ai/dsh-fs": ">=0.1.2-rc.1",
     "@deepseek-ai/dsh-host-webserver": ">=0.1.2-rc.1",
     "@deepseek-ai/dsh-system-prompt": ">=0.1.2-rc.1",

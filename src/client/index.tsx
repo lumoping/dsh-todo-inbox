@@ -29,7 +29,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 
 export const name = 'todo-inbox-client'
-export const inject = ['slots', 'sessions', 'layout']
+export const inject = ['slots', 'uiWorkspace', 'layout']
 
 /** Structural typing only — the loader supplies the real slot registry. */
 interface SlotBridge {
@@ -37,8 +37,13 @@ interface SlotBridge {
   register(options: { name: string; id?: string }, component: unknown): unknown
 }
 /** Structural typing for the sessions service we use: open a session by id. */
-interface SessionsBridge {
-  open(id: string): void
+/**
+ * Structural typing for the workspace service we use: select a session and
+ * show its conversation. dsh 0.2 dropped the old `sessions.open(id)` face, so
+ * navigation now goes through `uiWorkspace.openSession(target)`.
+ */
+interface WorkspaceBridge {
+  openSession(id: string): void
 }
 /** Structural typing for the layout service we use: expand the sidebar. */
 interface LayoutBridge {
@@ -47,7 +52,7 @@ interface LayoutBridge {
 interface ClientCtx {
   effect(callback: () => void | (() => void)): void
   slots: SlotBridge
-  sessions: SessionsBridge
+  uiWorkspace: WorkspaceBridge
   layout: LayoutBridge
 }
 
@@ -278,11 +283,17 @@ export function renderDetail(text: string, keyBase: string): React.ReactNode[] {
   return out
 }
 
-/** Jump to the session that recorded this item (source = session id). */
-function openSourceSession(source: string): void {
-  if (source === '' || inboxStore.sessions === null) return
+/**
+ * Jump to the session that recorded this item (source = session id).
+ *
+ * `uiWorkspace.openSession` accepts a known Session identity; guard the shape
+ * locally so a non-session source (e.g. an item added through the HTTP route,
+ * whose source is `api`) never navigates anywhere.
+ */
+export function openSourceSession(source: string): void {
+  if (!source.startsWith('session-') || inboxStore.workspace === null) return
   try {
-    inboxStore.sessions.open(source)
+    inboxStore.workspace.openSession(source)
   } catch (error) {
     console.error('[todo-inbox] open source session failed', error)
   }
@@ -301,8 +312,8 @@ interface InboxStore {
 const inboxStore: {
   current: InboxStore
   listeners: Set<() => void>
-  /** Client sessions service, set at apply time; null in the smoke test. */
-  sessions: SessionsBridge | null
+  /** Client workspace service, set at apply time; null in the smoke test. */
+  workspace: WorkspaceBridge | null
   /** Client layout service, set at apply time; null in the smoke test. */
   layout: LayoutBridge | null
 } = {
@@ -313,7 +324,7 @@ const inboxStore: {
     sectionOpen: true,
   },
   listeners: new Set(),
-  sessions: null,
+  workspace: null,
   layout: null,
 }
 
@@ -466,7 +477,7 @@ function InboxAction(props: { wide?: boolean }) {
 }
 
 export function apply(ctx: ClientCtx): void {
-  inboxStore.sessions = ctx.sessions
+  inboxStore.workspace = ctx.uiWorkspace
   inboxStore.layout = ctx.layout
   ctx.effect(() => {
     if (typeof document === 'undefined') return

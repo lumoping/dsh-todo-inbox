@@ -290,18 +290,19 @@ const factory = captured.factory
 const clientApi = factory(clientRequire)
 
 check('client plugin entry (name/inject/apply)', () => {
-  assert.deepEqual(clientApi.inject, ['slots', 'sessions', 'layout'])
+  assert.deepEqual(clientApi.inject, ['slots', 'uiWorkspace', 'layout'])
   assert.equal(typeof clientApi.apply, 'function')
 })
 
 let injectedSlot = null
+const openedSessions = []
 const clientCtx = {
   effect: (fn) => { fn() },
   slots: {
     inject: (slot, factory2) => { injectedSlot = { slot, factory2 } },
     register: (_options, component) => component,
   },
-  sessions: { open: () => {} },
+  uiWorkspace: { openSession: (id) => { openedSessions.push(id) } },
   layout: { toggleSidebar: () => {} },
 }
 let styleTags = 0
@@ -318,6 +319,18 @@ check('apply() injects sidebar.footer.action', () => {
 })
 check('apply() injects the plugin style tag', () => {
   assert.equal(styleTags, 1)
+})
+check('detail click navigates through uiWorkspace.openSession', () => {
+  clientApi.openSourceSession('session-abc')
+  assert.deepEqual(openedSessions, ['session-abc'])
+  // A source that is not a session id must never navigate anywhere.
+  clientApi.openSourceSession('api')
+  clientApi.openSourceSession('')
+  assert.deepEqual(openedSessions, ['session-abc'])
+})
+check('client bundle drops the removed sessions.open face', () => {
+  assert.ok(clientSource.includes('openSession'), 'should call uiWorkspace.openSession')
+  assert.ok(!clientSource.includes('sessions.open('), 'should not call the removed sessions.open')
 })
 
 console.log('\n[client] renderDetail (safe markdown subset)')
