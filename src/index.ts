@@ -81,11 +81,17 @@ const INBOX_PROMPT_SECTION = {
   order: 1600,
   text:
     '## Global todo inbox\n'
-    + 'When your work produces an action that waits on the human — merge an MR, approve a work order, '
-    + 'review something, release, roll back after a future event, or any follow-up you name in your reply '
-    + '("after X completes, do Y") — you MUST call `inbox_add` in the same turn. Never leave such an action '
-    + 'only in prose: if you wrote it in the reply, it belongs in the inbox. Use `inbox_list` to check what '
-    + 'is still pending, and `inbox_done` once the human confirms it is handled.',
+    + 'A cross-session inbox of actions waiting on the human, shown in the sidebar.\n'
+    + 'Add an item only when the human must act OUTSIDE this session and the item outlives it: merge an MR, '
+    + 'approve or publish an order, grant a permission or quota, release, or roll back after a future event.\n'
+    + 'Never add a question or choice you are raising in this turn, a step you will do yourself, or in-session '
+    + 'progress — those stay in the conversation or in `todo_write`. The inbox is not a decision diary.\n'
+    + '- `inbox_list` first. If a pending item already covers the same action, rewrite it with `inbox_update` '
+    + 'rather than adding a near-duplicate.\n'
+    + '- `inbox_add` one item per distinct human action: title = one short action phrase (under ~40 characters, '
+    + 'e.g. "merge MR !1234"); reasoning, evidence and ids go in `detail`, the URL in `link`. The sidebar '
+    + 'truncates long titles, so a paragraph there is unreadable.\n'
+    + '- `inbox_done` once the human confirms it is handled, or to close an item that went stale.',
 }
 
 export function apply(ctx: Context, config?: TodoInboxConfig): void {
@@ -187,18 +193,20 @@ export function apply(ctx: Context, config?: TodoInboxConfig): void {
   ctx.tools.register(defineTool({
     name: 'inbox_add',
     description:
-      'Record one item waiting on the human in the GLOBAL todo inbox (merge MR, '
-      + 'approve work order, review, release, rollback after a future event...). '
-      + 'TRIGGER RULE: whenever your reply names a future human action, call this '
-      + 'tool in the same turn — never mention it only in prose. Any session can '
-      + 'add; the user sees every pending item in the sidebar inbox section.',
+      'Record one action waiting on the human that outlives this session (merge '
+      + 'MR, approve or publish a work order, grant a permission or quota, review, '
+      + 'release, roll back after a future event). Do NOT record a question or '
+      + 'choice still being raised in this turn, an in-session step, or work you '
+      + 'will do yourself. Call `inbox_list` first: if a pending item already '
+      + 'covers the same action, use `inbox_update` instead of adding a duplicate. '
+      + 'Any session can add; the user sees every pending item in the sidebar.',
     parameters: {
       type: {
         type: 'string',
         enum: ['merge-mr', 'approve-order', 'review', 'release', 'other'],
         description: 'Item type',
       },
-      title: { type: 'string', required: true, description: 'One line saying what the human must do, e.g. "merge MR !1234"' },
+      title: { type: 'string', required: true, description: 'Short action phrase, under ~40 characters, e.g. "merge MR !1234"; put reasoning and evidence in detail' },
       detail: { type: 'string', description: 'Optional extra context' },
       link: { type: 'string', description: 'Optional link, e.g. the MR / work-order URL' },
       due: { type: 'string', description: 'Optional ISO 8601 deadline, e.g. 2026-09-08T10:00:00+08:00' },
@@ -235,6 +243,60 @@ export function apply(ctx: Context, config?: TodoInboxConfig): void {
   }))
 
   ctx.tools.register(defineTool({
+    name: 'inbox_update',
+    description:
+      'Rewrite fields of one existing global inbox item in place, keeping its id '
+      + 'and creation time. Use this instead of `inbox_add` when a pending item '
+      + 'already covers the same human action and only its wording, evidence, type, '
+      + 'link or deadline changed — revising an item must never leave a second, '
+      + 'near-identical entry behind. Omitted fields stay untouched; pass an empty '
+      + 'string to clear detail, link or due.',
+    parameters: {
+      id: { type: 'string', required: true, description: 'Item id (from inbox_list)' },
+      title: { type: 'string', description: 'Replacement short action phrase, under ~40 characters' },
+      type: {
+        type: 'string',
+        enum: ['merge-mr', 'approve-order', 'review', 'release', 'other'],
+        description: 'Replacement item type',
+      },
+      detail: { type: 'string', description: 'Replacement context; an empty string clears it' },
+      link: { type: 'string', description: 'Replacement URL; an empty string clears it' },
+      due: { type: 'string', description: 'Replacement ISO 8601 deadline; an empty string clears it' },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: {
+        ok: { type: 'boolean', required: true },
+        id: { type: 'string' },
+        pending: { type: 'integer', required: true },
+        error: { type: 'string' },
+      } },
+      render: renderJson,
+    },
+    execute(args: { id?: string; title?: string; type?: string; detail?: string; link?: string; due?: string }) {
+      const id = String(args.id ?? '')
+      const title = args.title === undefined ? undefined : String(args.title).trim()
+      if (title !== undefined && title.length === 0) {
+        return Promise.resolve({ ok: false, id, pending: pendingCount(), error: 'empty_title' })
+      }
+      return enqueue(async () => {
+        const item = items.find((candidate) => candidate.id === id)
+        if (item === undefined) return { ok: false, id, pending: pendingCount(), error: 'not_found' }
+        if (title !== undefined) item.title = title
+        if (args.type !== undefined) item.type = String(args.type)
+        if (args.detail !== undefined) item.detail = String(args.detail)
+        if (args.link !== undefined) item.link = String(args.link)
+        if (args.due !== undefined) {
+          const due = String(args.due)
+          item.dueAt = due.length > 0 ? due : null
+        }
+        await persist()
+        return { ok: true, id, pending: pendingCount() }
+      })
+    },
+    presentCall: args => ({ card: 'generic', title: 'Update inbox item', kind: 'other', rawInput: args.id }),
+  }))
+
+  ctx.tools.register(defineTool({
     name: 'inbox_done',
     description: 'Mark one global inbox item as done.',
     parameters: {
@@ -245,6 +307,7 @@ export function apply(ctx: Context, config?: TodoInboxConfig): void {
         ok: { type: 'boolean', required: true },
         id: { type: 'string' },
         pending: { type: 'integer', required: true },
+        error: { type: 'string' },
       } },
       render: renderJson,
     },
@@ -252,7 +315,7 @@ export function apply(ctx: Context, config?: TodoInboxConfig): void {
       const id = String(args.id ?? '')
       return enqueue(async () => {
         const item = items.find((candidate) => candidate.id === id)
-        if (item === undefined) return { ok: false, pending: pendingCount() }
+        if (item === undefined) return { ok: false, id, pending: pendingCount(), error: 'not_found' }
         item.doneAt = new Date().toISOString()
         await persist()
         return { ok: true, id, pending: pendingCount() }

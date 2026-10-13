@@ -75,8 +75,8 @@ const tool = (toolName) => {
   assert.ok(found, `tool ${toolName} registered`)
   return found
 }
-check('three model tools registered', () => {
-  assert.deepEqual(registeredTools.map((t) => t.name).sort(), ['inbox_add', 'inbox_done', 'inbox_list'])
+check('four model tools registered', () => {
+  assert.deepEqual(registeredTools.map((t) => t.name).sort(), ['inbox_add', 'inbox_done', 'inbox_list', 'inbox_update'])
 })
 check('one /todo-inbox/api prefix route registered', () => {
   assert.equal(registeredRoutes.length, 1)
@@ -87,7 +87,13 @@ check('one /todo-inbox/api prefix route registered', () => {
 check('prompt discipline section registered', () => {
   assert.equal(registeredSections.length, 1)
   assert.equal(registeredSections[0].name, 'todo-inbox:discipline')
-  assert.ok(registeredSections[0].text.includes('inbox_add'))
+  const text = registeredSections[0].text
+  assert.ok(text.includes('inbox_add'))
+  // The noise rules the section must keep carrying: scope, dedupe, short titles.
+  assert.ok(text.includes('todo_write'), 'delegates in-session steps to todo_write')
+  assert.ok(text.includes('inbox_update'), 'tells the model to revise rather than duplicate')
+  assert.ok(text.includes('inbox_list'), 'requires checking for an existing item first')
+  assert.ok(/40 characters/.test(text), 'bounds the title length')
 })
 
 const exec = async (toolName, args) => {
@@ -113,6 +119,47 @@ check('inbox_list returns the pending item', async () => {
   assert.equal(result.pending, 1)
   assert.equal(result.items.length, 1)
   assert.equal(result.items[0].id, added)
+})
+check('inbox_update rewrites fields in place, no new row', async () => {
+  const before = JSON.parse(readFileSync(dataPath, 'utf8')).items[0]
+  const result = await exec('inbox_update', {
+    id: added, title: 'merge MR !1234 (rebase first)', type: 'review',
+    detail: 'CI green, needs rebase', link: 'https://mr/1234',
+  })
+  assert.equal(result.ok, true)
+  assert.equal(result.pending, 1, 'update must not change the pending count')
+  const onDisk = JSON.parse(readFileSync(dataPath, 'utf8'))
+  assert.equal(onDisk.items.length, 1, 'update must not append a row')
+  const after = onDisk.items[0]
+  assert.equal(after.id, before.id)
+  assert.equal(after.createdAt, before.createdAt, 'update keeps the creation time')
+  assert.equal(after.title, 'merge MR !1234 (rebase first)')
+  assert.equal(after.type, 'review')
+  assert.equal(after.detail, 'CI green, needs rebase')
+  assert.equal(after.source, 'smoke-session', 'update keeps the source session')
+})
+check('inbox_update leaves omitted fields alone and clears on empty string', async () => {
+  const result = await exec('inbox_update', { id: added, detail: '', due: '' })
+  assert.equal(result.ok, true)
+  const after = JSON.parse(readFileSync(dataPath, 'utf8')).items[0]
+  assert.equal(after.detail, '', 'an empty string clears detail')
+  assert.equal(after.dueAt, null, 'an empty string clears the deadline')
+  assert.equal(after.link, 'https://mr/1234', 'an omitted link stays untouched')
+  assert.equal(after.title, 'merge MR !1234 (rebase first)', 'an omitted title stays untouched')
+})
+check('inbox_update / inbox_done report why they failed', async () => {
+  const blank = await exec('inbox_update', { id: added, title: '   ' })
+  assert.equal(blank.ok, false)
+  assert.equal(blank.error, 'empty_title')
+  const missingUpdate = await exec('inbox_update', { id: 'no-such-id', title: 'x' })
+  assert.equal(missingUpdate.ok, false)
+  assert.equal(missingUpdate.error, 'not_found')
+  const missingDone = await exec('inbox_done', { id: 'no-such-id' })
+  assert.equal(missingDone.ok, false)
+  assert.equal(missingDone.error, 'not_found')
+  const onDisk = JSON.parse(readFileSync(dataPath, 'utf8'))
+  assert.equal(onDisk.items.length, 1)
+  assert.equal(onDisk.items[0].title, 'merge MR !1234 (rebase first)', 'a rejected update changes nothing')
 })
 check('inbox_done marks it done (no longer pending)', async () => {
   const result = await exec('inbox_done', { id: added })
