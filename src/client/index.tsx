@@ -147,34 +147,7 @@ const CSS = `
   .tib-row-meta {
     margin-top: 2px; font-size: .8em; letter-spacing: .01em;
     color: var(--dsw-alias-label-tertiary, light-dark(#999, #888));
-    display: flex; align-items: center; gap: 6px;
   }
-  .tib-row-meta > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tib-context-toggle {
-    flex: none; padding: 0 6px; border-radius: 6px; cursor: pointer;
-    font: inherit; line-height: 1.5;
-    color: var(--dsw-alias-label-secondary, light-dark(#666, #aaa));
-    background: var(--dsw-alias-bg-layer-2, light-dark(#f2f2f2, #2a2a2a));
-    border: 1px solid var(--dsw-alias-border-l2, light-dark(#e0e0e0, #3a3a3a));
-  }
-  .tib-context-toggle:hover { color: var(--dsw-alias-label-primary, light-dark(#222, #eee)); }
-  .tib-context {
-    margin-top: 4px; padding: 6px 8px; border-radius: 8px; font-size: .82em;
-    background: var(--dsw-alias-bg-layer-2, light-dark(#f7f7f7, #262626));
-    border: 1px solid var(--dsw-alias-border-l2, light-dark(#e6e6e6, #383838));
-    display: flex; flex-direction: column; gap: 3px;
-  }
-  .tib-context-note { color: var(--dsw-alias-label-tertiary, light-dark(#999, #888)); }
-  .tib-context-line { display: flex; gap: 6px; align-items: baseline; }
-  .tib-context-role {
-    flex: none; min-width: 2.6em;
-    color: var(--dsw-alias-label-tertiary, light-dark(#999, #888));
-  }
-  .tib-context-text {
-    color: var(--dsw-alias-label-secondary, light-dark(#555, #bbb));
-    overflow: hidden; text-overflow: ellipsis;
-  }
-  .tib-context-you .tib-context-text { color: var(--dsw-alias-label-primary, light-dark(#333, #ddd)); }
   .tib-link { color: var(--dsw-alias-link, light-dark(#1a73e8, #8ab4f8)); text-decoration: none; }
   .tib-link:hover { text-decoration: underline; }
   .tib-code {
@@ -233,37 +206,6 @@ async function mutate(method: 'done' | 'remove' | 'add', body: Record<string, un
     body: JSON.stringify(body),
   })
   if (!response.ok) throw new Error(`inbox ${method} failed: ${response.status}`)
-}
-
-/** One line of the "where did this come from" excerpt. */
-interface ContextLine {
-  role: 'you' | 'agent' | 'tool'
-  text: string
-}
-
-/** Host answer for `GET /todo-inbox/api/context`. */
-interface ContextPayload {
-  ok: boolean
-  id?: string
-  sessionId?: string
-  turn?: number
-  lines?: ContextLine[]
-  error?: string
-}
-
-/** Human text for each failure code the host can report. */
-const CONTEXT_ERROR: Record<string, string> = {
-  not_found: '条目已不存在',
-  no_session: '这条没有来源会话（从界面新增的）',
-  unavailable: '本机未装载会话检索服务',
-  unreadable: '来源会话日志读不出来',
-  no_history: '来源会话还没有历史记录',
-}
-
-async function loadContext(id: string): Promise<ContextPayload> {
-  const response = await fetch(`${API}/context?id=${encodeURIComponent(id)}`)
-  if (!response.ok) throw new Error(`inbox context failed: ${response.status}`)
-  return await response.json() as ContextPayload
 }
 
 // ── tiny safe markdown subset (React elements only, no innerHTML) ──────────
@@ -438,36 +380,6 @@ function itemMeta(item: InboxItem): string {
 
 function InlineSection() {
   const { state, loaded, sectionOpen } = useInboxStore()
-  const [contextId, setContextId] = React.useState('')
-  const [contextState, setContextState] = React.useState<{ loading: boolean; payload: ContextPayload | null }>({
-    loading: false,
-    payload: null,
-  })
-  /** Latest requested item id, so a slow answer cannot overwrite a newer one. */
-  const contextRequest = React.useRef('')
-
-  const toggleContext = (id: string): void => {
-    if (contextId === id) {
-      contextRequest.current = ''
-      setContextId('')
-      return
-    }
-    contextRequest.current = id
-    setContextId(id)
-    setContextState({ loading: true, payload: null })
-    void loadContext(id).then(
-      (payload) => {
-        if (contextRequest.current !== id) return
-        setContextState({ loading: false, payload })
-      },
-      (error: unknown) => {
-        if (contextRequest.current !== id) return
-        console.error('[todo-inbox] context failed', error)
-        setContextState({ loading: false, payload: { ok: false, error: 'unreadable' } })
-      },
-    )
-  }
-
   return (
     <div className="tib-section">
       <button
@@ -524,48 +436,7 @@ function InlineSection() {
                       {renderDetail(item.detail, item.id)}
                     </div>
                   ) : null}
-                  {meta ? (
-                    <div className="tib-row-meta">
-                      <span>{meta}</span>
-                      {item.source.startsWith('session-') ? (
-                        <button
-                          className="tib-context-toggle"
-                          onClick={() => toggleContext(item.id)}
-                          title="看这条是从哪句话来的（不跳转、不翻历史）"
-                        >
-                          {contextId === item.id ? '收起来源' : '来源'}
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  {contextId === item.id ? (
-                    <div className="tib-context">
-                      {contextState.loading ? (
-                        <div className="tib-context-note">读取中…</div>
-                      ) : contextState.payload?.ok === true ? (
-                        <>
-                          {typeof contextState.payload.turn === 'number' && contextState.payload.turn > 0 ? (
-                            <div className="tib-context-note">第 {contextState.payload.turn} 轮</div>
-                          ) : null}
-                          {(contextState.payload.lines ?? []).map((line, index) => (
-                            <div className={`tib-context-line tib-context-${line.role}`} key={`${item.id}-ctx-${index}`}>
-                              <span className="tib-context-role">
-                                {line.role === 'you' ? '你' : line.role === 'agent' ? 'agent' : '工具'}
-                              </span>
-                              <span className="tib-context-text">{line.text}</span>
-                            </div>
-                          ))}
-                          {(contextState.payload.lines ?? []).length === 0 ? (
-                            <div className="tib-context-note">这一轮没有可摘录的内容</div>
-                          ) : null}
-                        </>
-                      ) : (
-                        <div className="tib-context-note">
-                          {CONTEXT_ERROR[contextState.payload?.error ?? ''] ?? '读取失败'}
-                        </div>
-                      )}
-                    </div>
-                  ) : null}
+                  {meta ? <div className="tib-row-meta">{meta}</div> : null}
                 </div>
               )
             })

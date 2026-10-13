@@ -51,36 +51,6 @@ const ctx = {
   webServer: { register: (route) => { registeredRoutes.push(route); return () => {} } },
   systemPrompt: { section: (section) => { registeredSections.push(section); return () => {} } },
   effect: (fn) => { fn() },
-  // `sessionQuery` is taken lazily (ctx.get) so the smoke test can decide
-  // whether the optional service is mounted.
-  get: (serviceName) => (serviceName === 'sessionQuery' ? sessionQueryStub ?? undefined : undefined),
-}
-
-/**
- * Stand-in for the session-query service: a synthetic log whose human request
- * and tool calls sit around the probed item's `createdAt`, which is what the
- * anchor is derived from.
- */
-const sessionQueryStub = {
-  readSession: async (sessionId) => {
-    const onDisk = JSON.parse(readFileSync(dataPath, 'utf8'))
-    const item = onDisk.items.find((candidate) => candidate.source === sessionId)
-    const base = Date.parse(item.createdAt)
-    const at = (offsetSeconds) => new Date(base + offsetSeconds * 1000).toISOString()
-    return {
-      session: { id: sessionId },
-      events: [
-        { seq: 0, time: at(-300), type: 'turn/start', data: {} },
-        { seq: 1, time: at(-290), type: 'user/message', data: { content: [{ type: 'text', text: '把 RESP 那两个 PR merge 掉' }] } },
-        { seq: 2, time: at(-280), type: 'tool/call', data: { name: 'todo_write', arguments: '{}' } },
-        { seq: 3, time: at(-270), type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '收到，我先记到待办里' }] } } },
-        // Reasoning-only / empty user message: must not become the excerpt prompt.
-        { seq: 4, time: at(-120), type: 'user/message', data: { content: [{ type: 'reasoning', text: '不该出现' }, { type: 'text', text: '' }] } },
-        { seq: 5, time: at(-30), type: 'tool/call', data: { name: 'inbox_add', arguments: '{}' } },
-        { seq: 6, time: at(0), type: 'turn/end', data: { reason: { kind: 'completed' } } },
-      ],
-    }
-  },
 }
 
 const { apply } = await import('../lib/index.js')
@@ -272,65 +242,6 @@ await check('cross-origin request is fenced', async () => {
   const res = { status: 0, payload: null, writeHead(s, _h) { this.status = s }, end(t) { this.payload = JSON.parse(t) } }
   await registeredRoutes[0].handler(evil, res)
   assert.equal(res.status, 403)
-})
-
-console.log('\n[host] source-context excerpt (dsh gives no in-session jump, so we quote the moment)')
-let probeId
-await check('inbox_add tags the item with its session source', async () => {
-  const result = await exec('inbox_add', { type: 'other', title: 'context probe' })
-  probeId = result.id
-})
-
-await check('GET context quotes the request and the turn it belonged to', async () => {
-  const res = await send('GET', `/todo-inbox/api/context?id=${probeId}`)
-  assert.equal(res.status, 200)
-  assert.equal(res.payload.ok, true)
-  assert.equal(res.payload.sessionId, SESSION_ID)
-  assert.equal(res.payload.turn, 1, 'counts the turn/start preceding the anchor')
-  assert.deepEqual(res.payload.lines, [
-    { role: 'you', text: '把 RESP 那两个 PR merge 掉' },
-    { role: 'tool', text: 'todo_write' },
-    { role: 'agent', text: '收到，我先记到待办里' },
-    { role: 'tool', text: 'inbox_add' },
-  ])
-})
-
-await check('context ignores empty and reasoning-only user messages', async () => {
-  const res = await send('GET', `/todo-inbox/api/context?id=${probeId}`)
-  const lines = res.payload.lines
-  assert.equal(lines.filter((line) => line.role === 'you').length, 1, 'one prompt only')
-  assert.ok(!lines.some((line) => line.text.includes('不该出现')), 'reasoning never leaks')
-})
-
-await check('context reports not_found for an unknown id', async () => {
-  const res = await send('GET', '/todo-inbox/api/context?id=nope')
-  assert.equal(res.payload.ok, false)
-  assert.equal(res.payload.error, 'not_found')
-})
-
-await check('context reports no_session for a UI-added item', async () => {
-  const added2 = await send('POST', '/todo-inbox/api/add', { title: 'added from the UI' })
-  const res = await send('GET', `/todo-inbox/api/context?id=${added2.payload.id}`)
-  assert.equal(res.payload.ok, false)
-  assert.equal(res.payload.error, 'no_session')
-})
-
-await check('context degrades to unavailable when session-query is absent', async () => {
-  const saved = sessionQueryStub.readSession
-  sessionQueryStub.readSession = undefined
-  const res = await send('GET', `/todo-inbox/api/context?id=${probeId}`)
-  sessionQueryStub.readSession = saved
-  assert.equal(res.payload.ok, false)
-  assert.equal(res.payload.error, 'unavailable')
-})
-
-await check('context reports unreadable when the log read throws', async () => {
-  const saved = sessionQueryStub.readSession
-  sessionQueryStub.readSession = async () => { throw new Error('boom') }
-  const res = await send('GET', `/todo-inbox/api/context?id=${probeId}`)
-  sessionQueryStub.readSession = saved
-  assert.equal(res.payload.ok, false)
-  assert.equal(res.payload.error, 'unreadable')
 })
 
 // ── browser half ────────────────────────────────────────────────────────────
